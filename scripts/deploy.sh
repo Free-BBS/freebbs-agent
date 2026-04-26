@@ -8,6 +8,7 @@ SERVICE_NAME="${AGENT_SERVICE_NAME:-free-bbs-agent}"
 HEALTHCHECK_URL="${HEALTHCHECK_URL:-http://127.0.0.1:5001/health}"
 HEALTHCHECK_RETRIES="${HEALTHCHECK_RETRIES:-15}"
 HEALTHCHECK_DELAY_SECONDS="${HEALTHCHECK_DELAY_SECONDS:-2}"
+SYSTEMCTL_BIN="${SYSTEMCTL_BIN:-$(command -v systemctl)}"
 
 mkdir -p "$DEPLOY_DIR"
 
@@ -33,8 +34,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 
 echo "[deploy] restarting service"
-sudo systemctl restart "$SERVICE_NAME"
-sudo systemctl --no-pager --full status "$SERVICE_NAME"
+sudo -n "$SYSTEMCTL_BIN" restart "$SERVICE_NAME"
+sudo -n "$SYSTEMCTL_BIN" --no-pager --full status "$SERVICE_NAME"
 
 echo "[deploy] checking health: $HEALTHCHECK_URL"
 for ((attempt = 1; attempt <= HEALTHCHECK_RETRIES; attempt++)); do

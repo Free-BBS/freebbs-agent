@@ -74,7 +74,23 @@ sudo visudo -f /etc/sudoers.d/freebbs-agent-runner
 deploy ALL=NOPASSWD:/bin/systemctl restart free-bbs-agent,/bin/systemctl --no-pager --full status free-bbs-agent
 ```
 
-如果 `systemctl` 路径不同，用 `which systemctl` 确认后替换。
+如果 `systemctl` 路径不同，用下面命令确认后替换。Ubuntu 24.04 上常见路径是 `/usr/bin/systemctl`。
+
+```bash
+command -v systemctl
+```
+
+例如路径是 `/usr/bin/systemctl` 时，sudoers 应写成：
+
+```text
+deploy ALL=NOPASSWD:/usr/bin/systemctl restart free-bbs-agent,/usr/bin/systemctl --no-pager --full status free-bbs-agent
+```
+
+配置后可以用下面命令验证，不应该要求输入密码：
+
+```bash
+sudo -u deploy sudo -n "$(command -v systemctl)" status free-bbs-agent
+```
 
 ## 5. GitHub Secrets 和 Variables
 
