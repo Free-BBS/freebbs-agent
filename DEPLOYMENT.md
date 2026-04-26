@@ -84,6 +84,14 @@ deploy ALL=NOPASSWD:/bin/systemctl restart free-bbs-agent,/bin/systemctl --no-pa
 - `DEPLOY_USER`：例如 `deploy`
 - `DEPLOY_SSH_KEY`：可登录服务器的 SSH 私钥全文
 
+`DEPLOY_SSH_KEY` 必须包含完整私钥，包括首尾两行：
+
+```text
+-----BEGIN OPENSSH PRIVATE KEY-----
+...
+-----END OPENSSH PRIVATE KEY-----
+```
+
 可选 repository variables：
 
 - `DEPLOY_PORT`：默认 `22`
@@ -106,6 +114,29 @@ sudo -u deploy cat /home/deploy/.ssh/github-actions
 ```
 
 把最后输出的私钥保存为 GitHub secret `DEPLOY_SSH_KEY`。
+
+如果 GitHub Actions 报：
+
+```text
+Permission denied (publickey,password).
+scp: Connection closed
+```
+
+说明还没有通过 SSH 认证，优先检查：
+
+- `DEPLOY_USER` 是否就是服务器上写入 `authorized_keys` 的用户，例如 `deploy`
+- `DEPLOY_SSH_KEY` 是否是 `/home/deploy/.ssh/github-actions` 的私钥全文，而不是 `.pub` 公钥
+- `/home/deploy/.ssh/authorized_keys` 是否包含 `/home/deploy/.ssh/github-actions.pub`
+- 权限是否正确：`~deploy/.ssh` 为 `700`，`authorized_keys` 为 `600`
+- 服务器安全组或防火墙是否允许 GitHub runner 访问 `DEPLOY_PORT`
+
+可以在服务器上检查：
+
+```bash
+sudo -u deploy ls -la /home/deploy/.ssh
+sudo -u deploy ssh-keygen -y -f /home/deploy/.ssh/github-actions
+sudo -u deploy cat /home/deploy/.ssh/authorized_keys
+```
 
 ## 7. 首次上线建议
 

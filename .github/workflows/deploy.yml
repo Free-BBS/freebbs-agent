@@ -61,17 +61,40 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
+          ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null
+
+      - name: Check SSH auth
+        run: |
+          set -euo pipefail
+          ssh \
+            -i ~/.ssh/id_ed25519 \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "echo '[deploy] ssh auth ok'"
 
       - name: Upload release artifact
         run: |
           set -euo pipefail
           ARCHIVE_PATH="/tmp/freebbs-agent-${GITHUB_SHA}.tar.gz"
-          scp -P "$DEPLOY_PORT" "$ARCHIVE_PATH" "$DEPLOY_USER@$DEPLOY_HOST:/tmp/freebbs-agent-${GITHUB_SHA}.tar.gz"
+          scp \
+            -i ~/.ssh/id_ed25519 \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -P "$DEPLOY_PORT" \
+            "$ARCHIVE_PATH" \
+            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/freebbs-agent-${GITHUB_SHA}.tar.gz"
 
       - name: Deploy on app server
         run: |
           set -euo pipefail
-          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+          ssh \
+            -i ~/.ssh/id_ed25519 \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
             "set -euo pipefail; \
              RELEASE_DIR=/tmp/freebbs-agent-release-${GITHUB_SHA}; \
              rm -rf \"\$RELEASE_DIR\"; \
