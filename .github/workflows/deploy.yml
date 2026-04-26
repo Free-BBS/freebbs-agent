@@ -1,0 +1,86 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: freebbs-agent-production
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Validate project
+        run: bash scripts/ci-validate.sh
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: validate
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ vars.AGENT_DEPLOY_PATH || '/data/www/freebbs-agent' }}
+      ENV_FILE: ${{ vars.FREEBBS_AGENT_ENV_FILE || '/etc/free-bbs/freebbs-agent.env' }}
+      SERVICE_NAME: ${{ vars.AGENT_SERVICE_NAME || 'free-bbs-agent' }}
+      HEALTHCHECK_URL: ${{ vars.AGENT_HEALTHCHECK_URL || 'http://127.0.0.1:5001/health' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package release
+        run: |
+          set -euo pipefail
+          ARCHIVE_PATH="/tmp/freebbs-agent-${GITHUB_SHA}.tar.gz"
+          tar \
+            --exclude='.git' \
+            --exclude='.venv' \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            -czf "$ARCHIVE_PATH" .
+
+      - name: Configure SSH
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Upload release artifact
+        run: |
+          set -euo pipefail
+          ARCHIVE_PATH="/tmp/freebbs-agent-${GITHUB_SHA}.tar.gz"
+          scp -P "$DEPLOY_PORT" "$ARCHIVE_PATH" "$DEPLOY_USER@$DEPLOY_HOST:/tmp/freebbs-agent-${GITHUB_SHA}.tar.gz"
+
+      - name: Deploy on app server
+        run: |
+          set -euo pipefail
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "set -euo pipefail; \
+             RELEASE_DIR=/tmp/freebbs-agent-release-${GITHUB_SHA}; \
+             rm -rf \"\$RELEASE_DIR\"; \
+             mkdir -p \"\$RELEASE_DIR\"; \
+             tar -xzf /tmp/freebbs-agent-${GITHUB_SHA}.tar.gz -C \"\$RELEASE_DIR\"; \
+             cd \"\$RELEASE_DIR\"; \
+             DEPLOY_DIR='$DEPLOY_PATH' \
+             FREEBBS_AGENT_ENV_FILE='$ENV_FILE' \
+             AGENT_SERVICE_NAME='$SERVICE_NAME' \
+             HEALTHCHECK_URL='$HEALTHCHECK_URL' \
+             bash scripts/deploy.sh; \
+             rm -rf \"\$RELEASE_DIR\" /tmp/freebbs-agent-${GITHUB_SHA}.tar.gz"

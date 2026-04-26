@@ -1,0 +1,16 @@
+[Unit]
+Description=FREE-BBS agent service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/data/www/freebbs-agent
+EnvironmentFile=/etc/free-bbs/freebbs-agent.env
+ExecStart=/data/www/freebbs-agent/.venv/bin/python app.py
+Restart=always
+RestartSec=5
+User=deploy
+Group=deploy
+
+[Install]
+WantedBy=multi-user.target
