@@ -138,6 +138,15 @@ sudo -u deploy ssh-keygen -y -f /home/deploy/.ssh/github-actions
 sudo -u deploy cat /home/deploy/.ssh/authorized_keys
 ```
 
+也可以比对 GitHub Actions 日志里输出的 fingerprint：
+
+```bash
+sudo -u deploy ssh-keygen -lf /home/deploy/.ssh/github-actions.pub
+sudo -u deploy ssh-keygen -lf /home/deploy/.ssh/authorized_keys
+```
+
+两边 fingerprint 必须一致。如果不一致，把服务器上 `/home/deploy/.ssh/github-actions` 的私钥全文重新保存到 GitHub secret `DEPLOY_SSH_KEY`，或者把 GitHub 私钥对应的公钥追加到服务器 `authorized_keys`。
+
 ## 7. 首次上线建议
 
 首次上线建议先手动跑一遍：
