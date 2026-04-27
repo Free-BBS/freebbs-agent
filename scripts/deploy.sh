@@ -33,6 +33,15 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
+if ! "$SYSTEMCTL_BIN" list-unit-files "$SERVICE_NAME.service" >/dev/null 2>&1; then
+  echo "[deploy] missing systemd unit: $SERVICE_NAME.service" >&2
+  echo "[deploy] install it on the server first:" >&2
+  echo "[deploy]   sudo cp $DEPLOY_DIR/deploy/systemd/free-bbs-agent.service /etc/systemd/system/$SERVICE_NAME.service" >&2
+  echo "[deploy]   sudo systemctl daemon-reload" >&2
+  echo "[deploy]   sudo systemctl enable $SERVICE_NAME" >&2
+  exit 1
+fi
+
 echo "[deploy] restarting service"
 sudo -n "$SYSTEMCTL_BIN" restart "$SERVICE_NAME"
 sudo -n "$SYSTEMCTL_BIN" --no-pager --full status "$SERVICE_NAME"

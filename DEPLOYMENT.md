@@ -46,9 +46,10 @@ AGENT_SYSTEM_PROMPT=你是 FREE-BBS 的 AI 助手。
 复制服务文件并启用：
 
 ```bash
-sudo cp deploy/systemd/free-bbs-agent.service /etc/systemd/system/
+sudo cp /data/www/freebbs-agent/deploy/systemd/free-bbs-agent.service /etc/systemd/system/free-bbs-agent.service
 sudo systemctl daemon-reload
 sudo systemctl enable free-bbs-agent
+sudo systemctl start free-bbs-agent
 ```
 
 服务默认使用：
@@ -174,3 +175,11 @@ curl http://127.0.0.1:5001/health
 ```
 
 确认服务正常后，再依赖 push 自动部署。
+
+如果 GitHub Actions 报：
+
+```text
+Failed to restart free-bbs-agent.service: Unit free-bbs-agent.service not found.
+```
+
+说明第 3 步 systemd 服务还没有安装到 `/etc/systemd/system/`。先在服务器执行第 3 步命令，再重新跑 Actions。
