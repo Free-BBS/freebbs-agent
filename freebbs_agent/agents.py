@@ -68,6 +68,7 @@ class CommentMentionAgent(FreeBBSAgent):# EXAMPLE
         return [{"role": "system", "content": f"{self.config.system_prompt}\n\n{self.comment_prompt}"}] + adjusted
 
 
+
 #################################################
 #                                               #
 #                                               #
@@ -97,7 +98,7 @@ def create_default_mux(config: AgentConfig, chat_client: ChatClient) -> AgentMux
     return AgentMux(
         [
             CommentMentionAgent(config, chat_client),
-            #这里添加新的Agent
+            #这里注册新的Agent
             GeneralChatAgent(config, chat_client),
         ]
     )
