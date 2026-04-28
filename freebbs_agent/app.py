@@ -4,16 +4,19 @@ import json
 
 from flask import Flask, Response, jsonify, request, stream_with_context
 
+from .agent_utils import AgentInvocation, ChatOptions
+from .agents import create_default_mux
 from .ai_client import AIClientError, ChatClient
 from .config import AgentConfig
 from .security import add_local_cors_headers, is_loopback_addr, reject_non_loopback_requests
 
 
-def create_app(config: AgentConfig | None = None, chat_client: ChatClient | None = None) -> Flask:
+def create_app(config: AgentConfig | None = None, chat_client: ChatClient | None = None, agent_mux=None) -> Flask:
     app_config = config or AgentConfig.from_env()
     app = Flask(__name__)
     app.config["AGENT_CONFIG"] = app_config
     app.chat_client = chat_client or ChatClient(app_config)  # type: ignore[attr-defined]
+    app.agent_mux = agent_mux or create_default_mux(app_config, app.chat_client)  # type: ignore[attr-defined]
 
     app.before_request(reject_non_loopback_requests)
     app.after_request(add_local_cors_headers)
@@ -29,27 +32,15 @@ def create_app(config: AgentConfig | None = None, chat_client: ChatClient | None
             return validation_error("request body must be a JSON object")
 
         try:
-            messages = normalize_messages(payload, app_config.system_prompt)
-            temperature = optional_float(payload, "temperature")
-            max_tokens = optional_int(payload, "max_tokens")
-            stream = optional_bool(payload, "stream")
+            invocation = build_invocation(payload, app_config)
+            selected_agent = app.agent_mux.select(invocation)  # type: ignore[attr-defined]
         except ValueError as exc:
             return validation_error(str(exc))
 
-        model = payload.get("model")
-        if model is not None and not isinstance(model, str):
-            return validation_error("model must be a string")
-
-        if stream:
+        if invocation.options.stream:
             return Response(
                 stream_with_context(
-                    sse_chat_stream(
-                        app.chat_client,  # type: ignore[attr-defined]
-                        messages,
-                        model=model,
-                        temperature=temperature,
-                        max_tokens=max_tokens,
-                    )
+                    sse_chat_stream(selected_agent, invocation)
                 ),
                 mimetype="text/event-stream",
                 headers={
@@ -59,18 +50,31 @@ def create_app(config: AgentConfig | None = None, chat_client: ChatClient | None
             )
 
         try:
-            result = app.chat_client.chat(  # type: ignore[attr-defined]
-                messages,
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+            result = selected_agent.run(invocation)
         except AIClientError as exc:
             return jsonify({"error": {"code": "ai_provider_error", "message": str(exc)}}), 502
 
         return jsonify(result)
 
     return app
+
+
+def build_invocation(payload: dict, config: AgentConfig) -> AgentInvocation:
+    messages = normalize_messages(payload, config.system_prompt)
+    model = payload.get("model")
+    if model is not None and not isinstance(model, str):
+        raise ValueError("model must be a string")
+
+    return AgentInvocation(
+        payload=payload,
+        messages=messages,
+        options=ChatOptions(
+            model=model,
+            temperature=optional_float(payload, "temperature"),
+            max_tokens=optional_int(payload, "max_tokens"),
+            stream=optional_bool(payload, "stream"),
+        ),
+    )
 
 
 def normalize_messages(payload: dict, default_system_prompt: str | None = None) -> list[dict[str, str]]:
@@ -139,14 +143,9 @@ def optional_bool(payload: dict, key: str) -> bool:
     return value
 
 
-def sse_chat_stream(chat_client, messages, *, model=None, temperature=None, max_tokens=None):
+def sse_chat_stream(agent, invocation):
     try:
-        for chunk in chat_client.stream_chat(
-            messages,
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        ):
+        for chunk in agent.stream(invocation):
             for char in chunk:
                 yield sse_event({"delta": char})
         yield sse_event({"done": True})

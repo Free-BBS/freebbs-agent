@@ -143,6 +143,25 @@ class AppTest(unittest.TestCase):
         self.assertIn('data: {"delta": "好"}', body)
         self.assertIn('data: {"done": true}', body)
 
+    def test_chat_routes_comment_mentions_to_comment_agent(self):
+        response = self.client.post(
+            "/api/v1/chat",
+            json={"message": "@max 这个问题怎么发讨论区？", "source": "comment"},
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        )
+        self.assertEqual(response.status_code, 200)
+        messages = self.chat_client.calls[0]["messages"]
+        self.assertIn("评论区 @Max 场景", messages[0]["content"])
+
+    def test_chat_rejects_unknown_agent(self):
+        response = self.client.post(
+            "/api/v1/chat",
+            json={"message": "hello", "agent": "missing_agent"},
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"]["code"], "bad_request")
+
 
 if __name__ == "__main__":
     unittest.main()

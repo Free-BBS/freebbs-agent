@@ -73,6 +73,13 @@ data: {"done":true}
 }
 ```
 
+可选路由参数：
+
+- `agent`：指定 agent。当前支持 `general_chat` / `general` / `chat`，以及 `comment_mention` / `comment` / `comment_at_max`
+- `source` 或 `channel`：请求来源。当前 `source: "comment"` 且消息包含 `@max` 时，会自动路由到评论区 agent
+
+后端内部会通过 mux 选择 agent。每个 agent 继承统一的 `FreeBBSAgent` 基类，核心入口是 `run(invocation)` 和 `stream(invocation)`；agent 内部可以多次调用 `call_llm(...)` 或执行其它操作。
+
 ## 环境变量
 
 - `AGENT_API_KEY`：模型服务 API key，也兼容 `OPENAI_API_KEY`
@@ -93,3 +100,7 @@ data: {"done":true}
 - `deploy/systemd/free-bbs-agent.service`：systemd 服务模板
 
 部署准备细节见 [DEPLOYMENT.md](DEPLOYMENT.md)。
+
+## Agent 开发
+
+新增 agent 的方式见 [docs/adding-agent.md](docs/adding-agent.md)。
