@@ -56,6 +56,11 @@ class AppTest(unittest.TestCase):
         response = self.client.get("/health", environ_base={"REMOTE_ADDR": "10.0.0.2"})
         self.assertEqual(response.status_code, 403)
 
+    def test_dev_agent_test_page(self):
+        response = self.client.get("/dev/agent-test", environ_base={"REMOTE_ADDR": "127.0.0.1"})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Agent Test", response.get_data(as_text=True))
+
     def test_chat_accepts_message(self):
         response = self.client.post(
             "/api/v1/chat",

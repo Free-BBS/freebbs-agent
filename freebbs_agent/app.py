@@ -8,6 +8,7 @@ from .agent_utils import AgentInvocation, ChatOptions
 from .agents import create_default_mux
 from .ai_client import AIClientError, ChatClient
 from .config import AgentConfig
+from .dev_page import DEV_AGENT_TEST_HTML
 from .security import add_local_cors_headers, is_loopback_addr, reject_non_loopback_requests
 
 
@@ -24,6 +25,10 @@ def create_app(config: AgentConfig | None = None, chat_client: ChatClient | None
     @app.get("/health")
     def health():
         return jsonify({"status": "ok", "service": "freebbs-agent"})
+
+    @app.get("/dev/agent-test")
+    def dev_agent_test():
+        return Response(DEV_AGENT_TEST_HTML, mimetype="text/html")
 
     @app.post("/api/v1/chat")
     def chat():

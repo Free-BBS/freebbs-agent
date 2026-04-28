@@ -186,6 +186,7 @@ def execute_mysql(
         connection.close()
 
 
+
 def _assert_read_only_sql(sql: str) -> None:
     statement = sql.strip().lower()
     if not statement.startswith(("select", "with")):
@@ -215,3 +216,4 @@ def _response_charset(content_type: str | None) -> str:
         if part.lower().startswith("charset="):
             return part.split("=", 1)[1].strip()
     return "utf-8"
+

@@ -38,6 +38,14 @@ python app.py
 curl http://127.0.0.1:5001/health
 ```
 
+开发测试页：
+
+```text
+http://127.0.0.1:5001/dev/agent-test
+```
+
+这个页面只通过本地 agent 服务访问，用于开发人员测试指定 `agent`、`source`、`channel`、上下文 JSON 和流式输出。
+
 问答：
 
 ```bash
