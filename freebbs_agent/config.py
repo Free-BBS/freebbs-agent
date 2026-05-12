@@ -139,7 +139,7 @@ class AgentConfig:
     rag_max_context_chunks: int = 4
     rag_embedding_provider: str = "local"
     rag_local_embedding_model: str = "BAAI/bge-small-zh-v1.5"
-    rag_local_embedding_dim: int = 384
+    rag_local_embedding_dim: int = 512
     rag_local_model_dir: str | None = None
     rag_local_files_only: bool = False
     rag_hf_endpoint: str | None = None
@@ -166,7 +166,7 @@ class AgentConfig:
             rag_max_context_chunks=int(os.getenv("RAG_MAX_CONTEXT_CHUNKS", "4")),
             rag_embedding_provider=os.getenv("RAG_EMBEDDING_PROVIDER", "local"),
             rag_local_embedding_model=os.getenv("RAG_LOCAL_EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5"),
-            rag_local_embedding_dim=int(os.getenv("RAG_LOCAL_EMBEDDING_DIM", "384")),
+            rag_local_embedding_dim=int(os.getenv("RAG_LOCAL_EMBEDDING_DIM", "512")),
             rag_local_model_dir=os.getenv("RAG_LOCAL_MODEL_DIR"),
             rag_local_files_only=os.getenv("RAG_LOCAL_FILES_ONLY", "false").lower() in {"1", "true", "yes", "on"},
             rag_hf_endpoint=os.getenv("RAG_HF_ENDPOINT"),

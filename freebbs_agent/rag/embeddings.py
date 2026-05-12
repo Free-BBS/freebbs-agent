@@ -20,7 +20,7 @@ class EmbeddingClient(Protocol):
 @dataclass
 class LocalEmbeddingClient:
     model_name: str
-    output_dim: int = 384
+    output_dim: int = 512
     local_model_dir: str | None = None
     local_files_only: bool = False
     hf_endpoint: str | None = None

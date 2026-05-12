@@ -104,7 +104,7 @@ data: {"done":true}
 - `RAG_MAX_CONTEXT_CHUNKS`：拼接进 prompt 的最大 chunk 数（默认 `4`）
 - `RAG_EMBEDDING_PROVIDER`：`local` 或 `api`，默认 `local`
 - `RAG_LOCAL_EMBEDDING_MODEL`：本地 embedding 模型名（默认 `BAAI/bge-small-zh-v1.5`）
-- `RAG_LOCAL_EMBEDDING_DIM`：本地 embedding 维度（默认 `384`）
+- `RAG_LOCAL_EMBEDDING_DIM`：本地 embedding 维度（默认 `512`）
 - `RAG_LOCAL_MODEL_DIR`：本地模型目录（设置后优先使用，不走网络）
 - `RAG_LOCAL_FILES_ONLY`：是否仅使用本地缓存模型（默认 `false`）
 - `RAG_HF_ENDPOINT`：HuggingFace 镜像端点（推荐国内环境配置 `https://hf-mirror.com`）
