@@ -1,0 +1,32 @@
+[
+  {
+    "query": "数算课上讲过哪些算法设计思想？分别有什么例子？",
+    "expected_source_keywords": ["course-outlines/data-and-algorithm-review-sheet"],
+    "expected_text_keywords": ["蛮力法", "分治法", "减治法", "变治法", "贪心算法", "动态规划", "回溯法", "分支定界法", "随机算法"],
+    "note": "课程提纲 Lecture 14/15 汇总了算法设计思想及对应例子。"
+  },
+  {
+    "query": "顺序表和单向链表在查找、插入、删除上的复杂度有什么区别？",
+    "expected_source_keywords": ["course-outlines/data-and-algorithm-review-sheet"],
+    "expected_text_keywords": ["顺序表", "单向链表", "GetElem", "ListInsert", "ListDelete"],
+    "note": "课程提纲 Lecture 2 包含顺序表和链表基本操作复杂度表。"
+  },
+  {
+    "query": "快速排序、归并排序和堆排序的时间复杂度、稳定性和附加存储怎么比较？",
+    "expected_source_keywords": ["course-outlines/data-and-algorithm-review-sheet"],
+    "expected_text_keywords": ["快速排序", "归并排序", "堆排序", "稳定性", "附加存储"],
+    "note": "课程提纲 Lecture 9 对高级排序算法作了表格化总结。"
+  },
+  {
+    "query": "Dijkstra 算法和 Floyd 算法分别解决什么最短路径问题？",
+    "expected_source_keywords": ["course-outlines/data-and-algorithm-review-sheet"],
+    "expected_text_keywords": ["Dijkstra", "Floyd", "单源最短路径", "全源最短路径"],
+    "note": "课程提纲 Lecture 8 区分了单源最短路径和全源最短路径。"
+  },
+  {
+    "query": "数值计算里的截断误差和舍入误差分别是什么？",
+    "expected_source_keywords": ["course-outlines/data-and-algorithm-review-sheet"],
+    "expected_text_keywords": ["截断误差", "舍入误差", "总误差", "浮点运算"],
+    "note": "课程提纲 Lecture 10 覆盖数值计算误差和浮点运算。"
+  }
+]
