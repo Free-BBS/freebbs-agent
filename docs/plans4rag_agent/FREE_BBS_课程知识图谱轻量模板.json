@@ -1,0 +1,126 @@
+{
+  "schema_version": "1.0.0",
+  "course": {
+    "course_id": "signals-and-systems",
+    "name": "信号与系统",
+    "aliases": [
+      "信号系统",
+      "信号与系统基础"
+    ],
+    "english_name": "Signals and Systems",
+    "learning_direction": "信号与智能"
+  },
+  "chapters": [
+    {
+      "chapter_id": "ss-ch03",
+      "order": 3,
+      "name": "卷积",
+      "parent_chapter_id": null
+    },
+    {
+      "chapter_id": "ss-ch04",
+      "order": 4,
+      "name": "傅里叶分析",
+      "parent_chapter_id": null
+    }
+  ],
+  "knowledge_points": [
+    {
+      "knowledge_point_id": "ss-kp-0301",
+      "chapter_id": "ss-ch03",
+      "order": "3.1.1",
+      "name": "连续时间卷积积分",
+      "aliases": [
+        "卷积积分"
+      ],
+      "english_names": [
+        "Continuous-time convolution integral"
+      ],
+      "symbols": [
+        "x(t)*h(t)"
+      ],
+      "search_keywords": [
+        "卷积",
+        "滑动",
+        "翻转",
+        "积分"
+      ],
+      "summary": "用积分描述两个连续时间信号在翻转和平移后的重叠程度，是 LTI 系统求解输出的核心工具。",
+      "course_context": "本课程重点要求理解卷积的图形过程，掌握积分上下限，并能用卷积求连续时间 LTI 系统的零状态响应。",
+      "key_explanation": "在这里填写面向学生的核心解释。说明它解决什么问题、关键直觉或公式是什么，以及最容易误解的地方。不需要搬运整段讲义。",
+      "node_type": "core",
+      "difficulty": 2,
+      "application_scenarios": [
+        "LTI 系统输出计算"
+      ],
+      "notes": ""
+    },
+    {
+      "knowledge_point_id": "ss-kp-0401",
+      "chapter_id": "ss-ch04",
+      "order": "4.1.1",
+      "name": "傅里叶变换",
+      "aliases": [
+        "傅氏变换",
+        "FT"
+      ],
+      "english_names": [
+        "Fourier Transform"
+      ],
+      "symbols": [
+        "F(ω)"
+      ],
+      "search_keywords": [
+        "频域",
+        "频谱"
+      ],
+      "summary": "将信号从时域表示转换为频域表示，用于分析信号的频率组成。",
+      "course_context": "本课程使用傅里叶变换建立时域运算和频域性质之间的对应关系。",
+      "key_explanation": "在这里填写傅里叶变换的核心解释、适用条件和容易混淆的概念。",
+      "node_type": "core",
+      "difficulty": 3,
+      "application_scenarios": [
+        "信号频谱分析"
+      ],
+      "notes": ""
+    }
+  ],
+  "relations": [
+    {
+      "relation_id": "ss-rel-0001",
+      "from_knowledge_point_id": "ss-kp-0301",
+      "relation_type": "prerequisite",
+      "to_knowledge_point_id": "ss-kp-0401",
+      "scope": "within_course",
+      "strength": 3,
+      "description": "卷积性质是理解时域卷积与频域乘积对应关系的前置。",
+      "evidence_material_ids": [
+        "ss-mat-001"
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "material_id": "ss-mat-001",
+      "title": "信号与系统课程讲义",
+      "source_level": "course_material",
+      "material_type": "slides",
+      "location": "materials/signals-and-systems/lecture-03.pdf",
+      "locator": "第 12—18 页",
+      "knowledge_point_ids": [
+        "ss-kp-0301"
+      ],
+      "version": "2026 春"
+    }
+  ],
+  "review": {
+    "author_id": "",
+    "reviewer_id": "",
+    "review_status": "draft",
+    "notes": ""
+  },
+  "revision": {
+    "version": "0.1.0",
+    "updated_at": "2026-07-19"
+  }
+}
