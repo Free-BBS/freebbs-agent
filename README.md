@@ -111,6 +111,10 @@ data: {"done":true}
 - `RAG_EMBEDDING_API_KEY`：云端 embedding API key（`provider=api` 时使用）
 - `RAG_EMBEDDING_BASE_URL`：云端 embedding base url（可选）
 - `RAG_EMBEDDING_MODEL`：云端 embedding 模型名（默认 `text-embedding-3-small`）
+- `ONLINE_ROUTER_ENABLED`：无显式 `agent` 时是否在线判断使用 RAG（默认 `true`）
+- `ONLINE_ROUTER_CONFIDENCE_THRESHOLD`：自动路由到目标 Agent 的最低置信度（默认 `0.7`）
+- `RAG_QUERY_AUGMENTATION_ENABLED`：是否结合对话改写问题并生成子查询（默认 `true`）
+- `RAG_MAX_SUBQUERIES`：一次检索最多使用的扩展子查询数量（默认 `3`）
 
 ## 轻量 RAG（一期）
 
@@ -190,6 +194,17 @@ python scripts/build_rag_index.py \
 ```
 
 ### 调用 rag_agent
+
+启用 RAG 且索引存在时，普通请求可以省略 `agent`。服务会先在线判断是否需要平台知识，
+再把依赖对话的问题改写为独立查询，并通过多查询召回和 RRF 融合提升召回率：
+
+```bash
+curl -X POST http://127.0.0.1:5001/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"课程资料里如何比较 Dijkstra 和 Floyd？"}'
+```
+
+显式传入 `agent` 仍可用于开发调试或强制路由：
 
 ```bash
 curl -X POST http://127.0.0.1:5001/api/v1/chat \

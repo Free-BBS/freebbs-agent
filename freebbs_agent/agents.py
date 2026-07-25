@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .agent_utils import AgentConfig, AgentInvocation, AgentMux, Any, ChatClient, FreeBBSAgent, Iterator
+from .online_router import OnlineAgentRouter
 from .rag_agent import RagAgent
 
 
@@ -102,7 +103,8 @@ def create_default_mux(config: AgentConfig, chat_client: ChatClient) -> AgentMux
             RagAgent(config, chat_client),
             #这里注册新的Agent
             GeneralChatAgent(config, chat_client),
-        ]
+        ],
+        online_router=OnlineAgentRouter(config, chat_client),
     )
     
 #################################################

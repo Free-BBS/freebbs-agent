@@ -146,6 +146,10 @@ class AgentConfig:
     rag_embedding_api_key: str | None = None
     rag_embedding_base_url: str | None = None
     rag_embedding_model: str = "text-embedding-3-small"
+    online_router_enabled: bool = True
+    online_router_confidence_threshold: float = 0.7
+    rag_query_augmentation_enabled: bool = True
+    rag_max_subqueries: int = 3
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -173,4 +177,9 @@ class AgentConfig:
             rag_embedding_api_key=os.getenv("RAG_EMBEDDING_API_KEY"),
             rag_embedding_base_url=os.getenv("RAG_EMBEDDING_BASE_URL"),
             rag_embedding_model=os.getenv("RAG_EMBEDDING_MODEL", "text-embedding-3-small"),
+            online_router_enabled=os.getenv("ONLINE_ROUTER_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
+            online_router_confidence_threshold=float(os.getenv("ONLINE_ROUTER_CONFIDENCE_THRESHOLD", "0.7")),
+            rag_query_augmentation_enabled=os.getenv("RAG_QUERY_AUGMENTATION_ENABLED", "true").lower()
+            in {"1", "true", "yes", "on"},
+            rag_max_subqueries=int(os.getenv("RAG_MAX_SUBQUERIES", "3")),
         )
