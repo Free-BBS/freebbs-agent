@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import subprocess
 from pathlib import Path
 
@@ -8,11 +9,16 @@ from .chunking import SourceDocument
 
 SUPPORTED_TEXT_SUFFIXES = {".md", ".txt", ".rst", ".py", ".c", ".cpp", ".h"}
 SUPPORTED_BINARY_SUFFIXES = {".pdf"}
+SUPPORTED_NOTEBOOK_SUFFIXES = {".ipynb"}
 
 
 def clone_or_update_repo(repo_url: str, target_dir: str) -> Path:
     target_path = Path(target_dir)
-    if (target_path / ".git").exists():
+    git_marker = target_path / ".git"
+    if git_marker.is_file():
+        # Git submodules are pinned by the parent repository. Do not move them.
+        return target_path
+    if git_marker.is_dir():
         subprocess.run(
             ["git", "-C", str(target_path), "pull", "--ff-only"],
             check=True,
@@ -27,7 +33,12 @@ def clone_or_update_repo(repo_url: str, target_dir: str) -> Path:
     return target_path
 
 
-def load_documents_from_directory(root_dir: str, *, min_chars: int = 20) -> list[SourceDocument]:
+def load_documents_from_directory(
+    root_dir: str,
+    *,
+    min_chars: int = 20,
+    source_prefix: str = "",
+) -> list[SourceDocument]:
     root = Path(root_dir)
     files = sorted(path for path in root.rglob("*") if path.is_file())
     documents: list[SourceDocument] = []
@@ -35,7 +46,9 @@ def load_documents_from_directory(root_dir: str, *, min_chars: int = 20) -> list
     for path in files:
         if _is_ignored(path):
             continue
-        if path.suffix.lower() not in SUPPORTED_TEXT_SUFFIXES | SUPPORTED_BINARY_SUFFIXES:
+        if path.suffix.lower() not in (
+            SUPPORTED_TEXT_SUFFIXES | SUPPORTED_BINARY_SUFFIXES | SUPPORTED_NOTEBOOK_SUFFIXES
+        ):
             continue
 
         text = extract_text(path)
@@ -43,11 +56,12 @@ def load_documents_from_directory(root_dir: str, *, min_chars: int = 20) -> list
             continue
 
         rel = path.relative_to(root)
-        digest = hashlib.sha1(str(rel).encode("utf-8")).hexdigest()[:12]
+        source = f"{source_prefix.rstrip('/')}/{rel}" if source_prefix else str(rel)
+        digest = hashlib.sha1(source.encode("utf-8")).hexdigest()[:12]
         documents.append(
             SourceDocument(
                 doc_id=f"doc_{digest}",
-                source=str(rel),
+                source=source,
                 text=text,
             )
         )
@@ -69,6 +83,17 @@ def extract_text(path: Path) -> str:
         reader = PdfReader(str(path))
         pages = [page.extract_text() or "" for page in reader.pages]
         return "\n".join(pages)
+
+    if suffix == ".ipynb":
+        payload = json.loads(path.read_text(encoding="utf-8", errors="ignore"))
+        cells = payload.get("cells", [])
+        parts = []
+        for cell in cells:
+            if cell.get("cell_type") != "markdown":
+                continue
+            source = cell.get("source", [])
+            parts.append("".join(source) if isinstance(source, list) else str(source))
+        return "\n\n".join(parts)
 
     return ""
 

@@ -1,0 +1,31 @@
+[
+  {
+    "id": "freebbs-course-outlines",
+    "local_dir": "data/rag/source/course-outlines",
+    "license": "Project-owned content",
+    "topics": ["data-structures", "algorithms", "numerical-computing"]
+  },
+  {
+    "id": "thuee-hardware-contest",
+    "repo_url": "https://github.com/Lucas-Song-zero/2025HardWareContestOptionalPDFs_THUEE.git",
+    "repo_dir": "data/rag/source/2025HardWareContestOptionalPDFs_THUEE",
+    "license": "Verify upstream per document",
+    "topics": ["electronics", "pcb", "embedded", "networking"]
+  },
+  {
+    "id": "signals-and-systems",
+    "repo_url": "https://github.com/spatialaudio/signals-and-systems-lecture.git",
+    "repo_dir": "data/rag/source/signals-and-systems-lecture",
+    "license": "CC-BY-4.0",
+    "license_url": "https://github.com/spatialaudio/signals-and-systems-lecture/blob/master/LICENSE",
+    "topics": ["signals", "systems", "fourier-transform", "sampling"]
+  },
+  {
+    "id": "digital-signal-processing",
+    "repo_url": "https://github.com/spatialaudio/digital-signal-processing-lecture.git",
+    "repo_dir": "data/rag/source/digital-signal-processing-lecture",
+    "license": "MIT",
+    "license_url": "https://github.com/spatialaudio/digital-signal-processing-lecture/blob/master/LICENSE",
+    "topics": ["digital-signal-processing", "filter-design", "dft", "sampling"]
+  }
+]

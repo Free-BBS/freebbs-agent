@@ -3,6 +3,7 @@ from __future__ import annotations
 from .agent_utils import AgentInvocation, Any, ChatOptions, FreeBBSAgent, Iterator
 from .rag.embeddings import build_embedding_client
 from .rag.faiss_store import FaissVectorStore, RetrievedChunk
+from .rag.fusion import reciprocal_rank_fusion
 from .rag.query_planner import QueryPlan, QueryPlanner
 
 
@@ -59,10 +60,18 @@ class RagAgent(FreeBBSAgent):
                 self.config.rag_metadata_path,
             )
         ranked_lists = []
+        weights = []
         for query in plan.queries(self.config.rag_max_subqueries):
             query_vector = self._embedder.embed_query(query)
             ranked_lists.append(self._store.search(query_vector, top_k=self.config.rag_top_k))
-        return _reciprocal_rank_fusion(ranked_lists, top_k=self.config.rag_top_k)
+            weights.append(1.0)
+            ranked_lists.append(self._store.search_keywords(query, top_k=self.config.rag_top_k))
+            weights.append(0.5)
+        return reciprocal_rank_fusion(
+            ranked_lists,
+            top_k=self.config.rag_top_k,
+            weights=weights,
+        )
 
     def _with_retrieved_context(
         self,
@@ -93,28 +102,3 @@ class RagAgent(FreeBBSAgent):
             "agent": self.name,
             "sources": [],
         }
-
-
-def _reciprocal_rank_fusion(
-    ranked_lists: list[list[RetrievedChunk]],
-    *,
-    top_k: int,
-    rank_constant: int = 60,
-) -> list[RetrievedChunk]:
-    scores: dict[str, float] = {}
-    chunks: dict[str, RetrievedChunk] = {}
-    for hits in ranked_lists:
-        for rank, hit in enumerate(hits, start=1):
-            scores[hit.chunk_id] = scores.get(hit.chunk_id, 0.0) + 1.0 / (rank_constant + rank)
-            chunks[hit.chunk_id] = hit
-    ordered = sorted(scores, key=scores.get, reverse=True)[:top_k]
-    return [
-        RetrievedChunk(
-            chunk_id=chunks[chunk_id].chunk_id,
-            doc_id=chunks[chunk_id].doc_id,
-            source=chunks[chunk_id].source,
-            text=chunks[chunk_id].text,
-            score=scores[chunk_id],
-        )
-        for chunk_id in ordered
-    ]

@@ -9,6 +9,7 @@ from ..ai_client import AIClientError
 
 PLANNER_PROMPT = """你是中文课程知识库的检索规划器，只生成检索计划，不回答问题。
 结合最近对话把当前问题改写为独立问题，提取实体和关键词，并给出少量互补子查询。
+资料可能是英文；遇到专业术语时，在关键词或子查询中同时保留常用中英文名称和缩写。
 不要添加对话中没有依据的具体事实。只输出 JSON：
 {"standalone_query":"...","intent":"...","entities":[],"keywords":[],"subqueries":[]}"""
 

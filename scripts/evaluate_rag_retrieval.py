@@ -14,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from freebbs_agent.config import AgentConfig
 from freebbs_agent.rag.embeddings import build_embedding_client
 from freebbs_agent.rag.faiss_store import FaissVectorStore
+from freebbs_agent.rag.fusion import reciprocal_rank_fusion
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate retrieval quality against current RAG corpus.")
     parser.add_argument("--top-k", type=int, default=5, help="TopK results to inspect.")
     parser.add_argument(
+        "--mode",
+        choices=["vector", "hybrid"],
+        default="hybrid",
+        help="Evaluate vector-only retrieval or BM25+vector RRF fusion.",
+    )
+    parser.add_argument(
         "--query-set",
         default="",
         help="Optional JSON file path for custom query set. Schema: [{query, expected_source_keywords, expected_text_keywords, note}]",
@@ -108,12 +115,22 @@ def main() -> None:
     print("RAG retrieval evaluation (dataset-aligned):")
     print(f"- cases: {len(cases)}")
     print(f"- top_k: {args.top_k}")
+    print(f"- mode: {args.mode}")
     print(f"- index: {config.rag_index_path}")
     print()
 
     for case_idx, case in enumerate(cases, start=1):
         query_vec = embedder.embed_query(case.query)
-        hits = store.search(query_vec, top_k=args.top_k)
+        vector_hits = store.search(query_vec, top_k=args.top_k)
+        if args.mode == "hybrid":
+            keyword_hits = store.search_keywords(case.query, top_k=args.top_k)
+            hits = reciprocal_rank_fusion(
+                [vector_hits, keyword_hits],
+                top_k=args.top_k,
+                weights=[1.0, 0.5],
+            )
+        else:
+            hits = vector_hits
 
         first_relevant_rank = None
         for rank, hit in enumerate(hits, start=1):

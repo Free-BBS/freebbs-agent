@@ -3,10 +3,16 @@ from __future__ import annotations
 import hashlib
 import math
 import os
+import sys
 from dataclasses import dataclass
 from typing import Protocol
 
 from ..config import AgentConfig
+
+if sys.platform == "darwin":
+    # PyTorch and faiss-cpu can load conflicting OpenMP runtimes on macOS.
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
 
 
 class EmbeddingClient(Protocol):
@@ -24,6 +30,7 @@ class LocalEmbeddingClient:
     local_model_dir: str | None = None
     local_files_only: bool = False
     hf_endpoint: str | None = None
+    allow_hash_fallback: bool = False
     _model: object | None = None
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
@@ -39,7 +46,12 @@ class LocalEmbeddingClient:
         if model is not None:
             vectors = model.encode(texts, normalize_embeddings=False)
             return [list(map(float, vector)) for vector in vectors]
-        return [self._hash_embedding(text) for text in texts]
+        if self.allow_hash_fallback:
+            return [self._hash_embedding(text) for text in texts]
+        raise RuntimeError(
+            "Local embedding model is unavailable. Install sentence-transformers and "
+            "prepare the configured model, or explicitly set RAG_ALLOW_HASH_FALLBACK=true for tests."
+        )
 
     def _get_sentence_transformer(self):
         if self._model is not None:
@@ -142,6 +154,7 @@ def build_embedding_client(config: AgentConfig) -> EmbeddingClient:
             local_model_dir=config.rag_local_model_dir,
             local_files_only=config.rag_local_files_only,
             hf_endpoint=config.rag_hf_endpoint,
+            allow_hash_fallback=config.rag_allow_hash_fallback,
         )
     if provider in {"api", "openai", "openai_compatible"}:
         api_key = config.rag_embedding_api_key or config.api_key

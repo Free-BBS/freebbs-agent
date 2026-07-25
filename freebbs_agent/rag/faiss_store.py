@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .keyword_search import BM25Retriever
+
 
 @dataclass(frozen=True)
 class RetrievedChunk:
@@ -19,6 +21,7 @@ class FaissVectorStore:
     def __init__(self, index, metadata: list[dict[str, Any]]):
         self._index = index
         self._metadata = metadata
+        self._keyword_retriever = None
 
     @classmethod
     def build(cls, vectors: list[list[float]], metadata: list[dict[str, Any]]) -> "FaissVectorStore":
@@ -90,6 +93,23 @@ class FaissVectorStore:
                     source=row.get("source", ""),
                     text=row.get("text", ""),
                     score=float(score),
+                )
+            )
+        return results
+
+    def search_keywords(self, query: str, top_k: int) -> list[RetrievedChunk]:
+        if self._keyword_retriever is None:
+            self._keyword_retriever = BM25Retriever(self._metadata)
+        results = []
+        for idx, score in self._keyword_retriever.search(query, top_k=top_k):
+            row = self._metadata[idx]
+            results.append(
+                RetrievedChunk(
+                    chunk_id=row.get("chunk_id", f"chunk_{idx}"),
+                    doc_id=row.get("doc_id", ""),
+                    source=row.get("source", ""),
+                    text=row.get("text", ""),
+                    score=score,
                 )
             )
         return results

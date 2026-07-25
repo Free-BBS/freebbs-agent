@@ -142,6 +142,7 @@ class AgentConfig:
     rag_local_embedding_dim: int = 512
     rag_local_model_dir: str | None = None
     rag_local_files_only: bool = False
+    rag_allow_hash_fallback: bool = False
     rag_hf_endpoint: str | None = None
     rag_embedding_api_key: str | None = None
     rag_embedding_base_url: str | None = None
@@ -173,6 +174,8 @@ class AgentConfig:
             rag_local_embedding_dim=int(os.getenv("RAG_LOCAL_EMBEDDING_DIM", "512")),
             rag_local_model_dir=os.getenv("RAG_LOCAL_MODEL_DIR"),
             rag_local_files_only=os.getenv("RAG_LOCAL_FILES_ONLY", "false").lower() in {"1", "true", "yes", "on"},
+            rag_allow_hash_fallback=os.getenv("RAG_ALLOW_HASH_FALLBACK", "false").lower()
+            in {"1", "true", "yes", "on"},
             rag_hf_endpoint=os.getenv("RAG_HF_ENDPOINT"),
             rag_embedding_api_key=os.getenv("RAG_EMBEDDING_API_KEY"),
             rag_embedding_base_url=os.getenv("RAG_EMBEDDING_BASE_URL"),

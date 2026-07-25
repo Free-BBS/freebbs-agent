@@ -107,6 +107,7 @@ data: {"done":true}
 - `RAG_LOCAL_EMBEDDING_DIM`：本地 embedding 维度（默认 `512`）
 - `RAG_LOCAL_MODEL_DIR`：本地模型目录（设置后优先使用，不走网络）
 - `RAG_LOCAL_FILES_ONLY`：是否仅使用本地缓存模型（默认 `false`）
+- `RAG_ALLOW_HASH_FALLBACK`：仅供测试的确定性 hash embedding 降级（默认 `false`，生产环境不应启用）
 - `RAG_HF_ENDPOINT`：HuggingFace 镜像端点（推荐国内环境配置 `https://hf-mirror.com`）
 - `RAG_EMBEDDING_API_KEY`：云端 embedding API key（`provider=api` 时使用）
 - `RAG_EMBEDDING_BASE_URL`：云端 embedding base url（可选）
@@ -180,10 +181,14 @@ export RAG_LOCAL_FILES_ONLY=true
 默认数据源是：
 
 ```text
-https://github.com/Lucas-Song-zero/2025HardWareContestOptionalPDFs_THUEE.git
+data/rag/sources.json
 ```
 
-可通过参数覆盖：
+manifest 会记录每个资料仓库的 URL、本地目录、许可证和主题。构建脚本按需 clone/update，
+不会把外部仓库内容提交到本仓库。当前包含 THUEE 硬件竞赛资料，以及开放许可的
+Signals and Systems、Digital Signal Processing 课程资料。
+
+也可以通过参数临时覆盖为单个仓库：
 
 ```bash
 python scripts/build_rag_index.py \
@@ -196,7 +201,8 @@ python scripts/build_rag_index.py \
 ### 调用 rag_agent
 
 启用 RAG 且索引存在时，普通请求可以省略 `agent`。服务会先在线判断是否需要平台知识，
-再把依赖对话的问题改写为独立查询，并通过多查询召回和 RRF 融合提升召回率：
+再把依赖对话的问题改写为独立查询，通过向量与 BM25 关键词混合召回，
+最后用 RRF 融合多条查询和两种召回通道的结果：
 
 ```bash
 curl -X POST http://127.0.0.1:5001/api/v1/chat \

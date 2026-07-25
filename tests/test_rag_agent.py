@@ -58,6 +58,7 @@ def make_config(index_path: str, metadata_path: str, *, rag_enabled: bool = True
         rag_local_embedding_dim=16,
         rag_local_model_dir=None,
         rag_local_files_only=True,
+        rag_allow_hash_fallback=True,
         rag_hf_endpoint="https://hf-mirror.com",
     )
 
@@ -68,6 +69,7 @@ def build_index(index_path: str, metadata_path: str):
         output_dim=16,
         local_files_only=True,
         hf_endpoint="https://hf-mirror.com",
+        allow_hash_fallback=True,
     )
     metadata = [
         {

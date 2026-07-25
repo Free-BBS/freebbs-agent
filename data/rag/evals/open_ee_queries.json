@@ -1,0 +1,32 @@
+[
+  {
+    "query": "连续时间信号和离散时间信号有什么区别？",
+    "expected_source_keywords": ["signals-and-systems"],
+    "expected_text_keywords": ["continuous", "discrete", "signal"],
+    "note": "应命中开放 Signals and Systems 课程。"
+  },
+  {
+    "query": "采样定理如何限制采样频率？什么是混叠？",
+    "expected_source_keywords": ["signals-and-systems", "digital-signal-processing"],
+    "expected_text_keywords": ["sampling", "aliasing", "nyquist"],
+    "note": "两套开放信号课程均包含采样与混叠。"
+  },
+  {
+    "query": "离散傅里叶变换 DFT 和 DTFT 有什么关系？",
+    "expected_source_keywords": ["signals-and-systems", "digital-signal-processing"],
+    "expected_text_keywords": ["DFT", "DTFT", "discrete Fourier"],
+    "note": "检查英文课程资料上的中英文跨语言召回。"
+  },
+  {
+    "query": "FIR 和 IIR 滤波器在递归结构上有什么区别？",
+    "expected_source_keywords": ["digital-signal-processing"],
+    "expected_text_keywords": ["FIR", "IIR", "recursive", "non-recursive"],
+    "note": "应命中 DSP 课程的递归与非递归滤波器章节。"
+  },
+  {
+    "query": "如何用双线性变换设计数字滤波器？",
+    "expected_source_keywords": ["digital-signal-processing/filter_design"],
+    "expected_text_keywords": ["bilinear", "filter design"],
+    "note": "应命中 DSP 课程滤波器设计内容。"
+  }
+]
