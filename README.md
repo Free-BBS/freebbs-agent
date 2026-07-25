@@ -18,13 +18,27 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-设置 `.env` 或当前 shell 环境变量：
+未启动 FREE-BBS 主服务时，可以使用静态环境变量进行本地开发：
 
 ```bash
+unset AGENT_SETTINGS_SOCKET AGENT_SERVICE_TOKEN
 export AGENT_API_KEY="your-api-key"
 export AGENT_BASE_URL="https://cloud.infini-ai.com/maas/v1"
 export AGENT_MODEL="glm-5.1"
 ```
+
+生产环境不再保存大模型 API key。Agent 通过主服务创建的 Unix
+Domain Socket 获取管理员在“系统设置”中维护的配置：
+
+```bash
+export AGENT_SETTINGS_SOCKET="/run/free-bbs/agent-config.sock"
+export AGENT_SERVICE_TOKEN="replace-with-the-shared-service-token"
+```
+
+`AGENT_SETTINGS_SOCKET` 和 `AGENT_SERVICE_TOKEN` 同时存在时启用主服务配置；两者都不
+存在时继续使用上述静态环境变量，兼容独立本地开发。只配置其中一个会直接启动失败，避免
+误回退到遗留环境 key。启用主服务配置后不会回退到环境变量中的 API key，认证失败或配置
+缺失会直接停止模型调用。
 
 启动：
 
@@ -90,13 +104,23 @@ data: {"done":true}
 
 ## 环境变量
 
-- `AGENT_API_KEY`：模型服务 API key，也兼容 `OPENAI_API_KEY`
-- `AGENT_BASE_URL`：OpenAI-compatible API 地址，默认 `https://cloud.infini-ai.com/maas/v1`
-- `AGENT_MODEL`：模型名，默认 `glm-5.1`
+- `AGENT_SETTINGS_SOCKET`：主服务配置接口的 Unix Domain Socket。生产环境使用
+  `/run/free-bbs/agent-config.sock`
+- `AGENT_SERVICE_TOKEN`：Agent 与主服务共享的服务认证 token。只放在服务环境文件中，
+  不要提交到仓库
+- `AGENT_SETTINGS_TIMEOUT_SECONDS`：读取同机配置的超时，默认 `2`
+- `AGENT_SETTINGS_CACHE_TTL_SECONDS`：成功配置的正常缓存时间，默认 `30`
+- `AGENT_SETTINGS_STALE_TTL_SECONDS`：主服务瞬时不可用时，最近一次有效配置最多可继续使用的时间，
+  默认 `300`
+- `AGENT_API_KEY`：仅用于未启用主服务配置的本地开发，也兼容 `OPENAI_API_KEY`
+- `AGENT_BASE_URL`：本地静态模式的 OpenAI-compatible API 地址，默认
+  `https://cloud.infini-ai.com/maas/v1`
+- `AGENT_MODEL`：本地静态模式的模型名，默认 `glm-5.1`
 - `AGENT_HOST`：监听地址，默认 `127.0.0.1`
 - `AGENT_PORT`：监听端口，默认 `5001`
 - `AGENT_TIMEOUT_SECONDS`：请求模型超时时间，默认 `60`
 - `AGENT_SYSTEM_PROMPT`：默认系统提示词。请求传 `system` 或 `messages` 时，以请求内容为准
+- `COURSE_MATERIALS_ROOT`：仅用于未启用主服务配置的本地静态模式；相对 RAG 路径会在此目录下解析
 - `RAG_ENABLED`：是否启用 RAG agent（默认 `false`）
 - `RAG_INDEX_PATH`：FAISS 索引路径（默认 `data/rag/index.faiss`）
 - `RAG_METADATA_PATH`：索引元数据路径（默认 `data/rag/metadata.jsonl`）
@@ -115,6 +139,33 @@ data: {"done":true}
 - `ONLINE_ROUTER_CONFIDENCE_THRESHOLD`：自动路由到目标 Agent 的最低置信度（默认 `0.7`）
 - `RAG_QUERY_AUGMENTATION_ENABLED`：是否结合对话改写问题并生成子查询（默认 `true`）
 - `RAG_MAX_SUBQUERIES`：一次检索最多使用的扩展子查询数量（默认 `3`）
+
+当管理员配置了 `courseMaterialsRoot` 且 `RAG_INDEX_PATH` /
+`RAG_METADATA_PATH` 为相对路径时，Agent 会在该根目录下解析这两个路径，并在根目录变化后
+重新加载索引。绝对索引路径保持原义。修改根目录不会自动建立索引，仍需先运行索引构建流程。
+索引构建脚本的相对 `--repo-dir` 也会在同一根目录下解析。
+
+## 主服务配置接口
+
+Agent 使用 HTTP over Unix Domain Socket 请求：
+
+```text
+GET /internal/v1/agent-config
+Authorization: Bearer <AGENT_SERVICE_TOKEN>
+```
+
+主服务返回 `apiKey`、`baseUrl`、`model`、`courseMaterialsRoot` 和 `revision`。
+`courseMaterialsRoot` 尚未配置时可以为空，其余字段必须有效。
+API key 只保存在进程内存中，快照对象的日志表示会隐藏它。相同 `revision` 会复用模型客户端；
+管理员保存新设置、`revision` 变化后，Agent 会在缓存刷新时自动重建客户端，无需重启。
+即使服务端异常返回相同 `revision`，Agent 也会比较密钥、Base URL 和模型名的不可逆指纹，
+不会把新配置误判为旧客户端。
+
+读取配置采用短超时和线程安全缓存。网络超时或主服务临时 5xx 时，只会在
+`AGENT_SETTINGS_STALE_TTL_SECONDS` 限定时间内使用最近一次有效配置；401、403、配置缺失、
+响应格式错误都会清空缓存并停止模型调用。配置接口不应挂载到公开 HTTP listener，也不应由
+Nginx 代理。生产部署使用独立的 `freebbs-agent` / `freebbs-backend` 服务用户，只通过
+`freebbs-agent-config` 共享组授予 socket 访问；前端和部署用户不在该组。
 
 ## 轻量 RAG（一期）
 
@@ -226,6 +277,8 @@ scripts/run_rag_5002.sh
 - 启用 `RAG_ENABLED=true`
 - 使用本地模型目录 `data/models/bge-small-zh-v1.5`
 - 使用索引 `data/rag/index.faiss` 与 `data/rag/metadata.jsonl`
+- 启动前按当前配置模式解析课程资料根目录并检查实际索引文件；启用主服务配置后会读取其
+  Unix Domain Socket，接口不可用或文件缺失时拒绝启动
 
 常见覆盖方式：
 
@@ -246,6 +299,8 @@ scripts/run_rag_5002.sh
 - 已准备本地模型目录：`data/models/bge-small-zh-v1.5`
 - 已构建索引文件：`data/rag/index.faiss` 与 `data/rag/metadata.jsonl`
 
+若启用了主服务配置，上述相对索引路径均以管理员设置的课程资料根目录为基准，而不是项目目录。
+
 停止服务：
 
 - 在启动脚本的终端按 `Ctrl+C`
@@ -264,6 +319,9 @@ scripts/run_rag_5002.sh
 . .venv/bin/activate
 python scripts/evaluate_rag_retrieval.py --top-k 5
 ```
+
+评估脚本与在线服务使用同一套主服务配置读取和路径解析逻辑；启用主服务配置时，会评估管理员
+所设课程资料根目录中的索引。
 
 输出包含：
 

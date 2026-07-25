@@ -1,22 +1,18 @@
-from openai import OpenAI
 import os
 
-client = OpenAI(
-    api_key=os.environ["AGENT_API_KEY"],
-    base_url=os.getenv("AGENT_BASE_URL", "https://cloud.infini-ai.com/maas/v1"),
-)
+import httpx
 
-response = client.chat.completions.create(
-    model=os.getenv("AGENT_MODEL", "glm-5.1"),
-    messages=[
-        {   "role": "system",
-            "content": "You are a helpful assistant."
-        },
-        {
-            "role": "user",
-            "content": "Explain to me how AI works"
-        }
-    ]
+agent_url = os.getenv("AGENT_URL", "http://127.0.0.1:5001").rstrip("/")
+response = httpx.post(
+    f"{agent_url}/api/v1/chat",
+    json={
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Explain to me how AI works"},
+        ]
+    },
+    timeout=65,
 )
+response.raise_for_status()
 
-print(response.choices[0].message.content)
+print(response.json()["answer"])

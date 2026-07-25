@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 
 
@@ -125,13 +125,19 @@ FREE BBS 的主要功能区包括：
 
 @dataclass(frozen=True)
 class AgentConfig:
-    api_key: str | None
+    api_key: str | None = field(repr=False)
     base_url: str
     model: str
     host: str
     port: int
     request_timeout_seconds: float
     system_prompt: str
+    course_materials_root: str = ""
+    settings_socket_path: str | None = None
+    agent_service_token: str | None = field(default=None, repr=False)
+    settings_timeout_seconds: float = 2.0
+    settings_cache_ttl_seconds: float = 30.0
+    settings_stale_ttl_seconds: float = 300.0
     rag_enabled: bool = False
     rag_index_path: str = "data/rag/index.faiss"
     rag_metadata_path: str = "data/rag/metadata.jsonl"
@@ -151,9 +157,24 @@ class AgentConfig:
     rag_query_augmentation_enabled: bool = True
     rag_max_subqueries: int = 3
 
+    @property
+    def server_settings_enabled(self) -> bool:
+        return bool(self.settings_socket_path and self.agent_service_token)
+
+    @property
+    def server_settings_partially_configured(self) -> bool:
+        return bool(self.settings_socket_path) != bool(self.agent_service_token)
+
     @classmethod
     def from_env(cls) -> "AgentConfig":
         system_prompt = os.getenv("AGENT_SYSTEM_PROMPT")
+        settings_socket_path = (os.getenv("AGENT_SETTINGS_SOCKET") or "").strip() or None
+        agent_service_token = (os.getenv("AGENT_SERVICE_TOKEN") or "").strip() or None
+
+        if bool(settings_socket_path) != bool(agent_service_token):
+            raise ValueError(
+                "AGENT_SETTINGS_SOCKET and AGENT_SERVICE_TOKEN must be configured together"
+            )
 
         return cls(
             api_key=os.getenv("AGENT_API_KEY") or os.getenv("OPENAI_API_KEY"),
@@ -163,6 +184,12 @@ class AgentConfig:
             port=int(os.getenv("AGENT_PORT", "5001")),
             request_timeout_seconds=float(os.getenv("AGENT_TIMEOUT_SECONDS", "60")),
             system_prompt=system_prompt.strip() if system_prompt and system_prompt.strip() else DEFAULT_SYSTEM_PROMPT,
+            course_materials_root=os.getenv("COURSE_MATERIALS_ROOT", "").strip(),
+            settings_socket_path=settings_socket_path,
+            agent_service_token=agent_service_token,
+            settings_timeout_seconds=float(os.getenv("AGENT_SETTINGS_TIMEOUT_SECONDS", "2")),
+            settings_cache_ttl_seconds=float(os.getenv("AGENT_SETTINGS_CACHE_TTL_SECONDS", "30")),
+            settings_stale_ttl_seconds=float(os.getenv("AGENT_SETTINGS_STALE_TTL_SECONDS", "300")),
             rag_enabled=os.getenv("RAG_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
             rag_index_path=os.getenv("RAG_INDEX_PATH", "data/rag/index.faiss"),
             rag_metadata_path=os.getenv("RAG_METADATA_PATH", "data/rag/metadata.jsonl"),

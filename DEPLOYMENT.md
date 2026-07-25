@@ -17,14 +17,20 @@ sudo apt-get update
 sudo apt-get install -y python3 python3-venv python3-pip rsync curl
 ```
 
-创建部署用户和目录：
+创建部署用户、Agent 服务用户和后端共享的 socket 组：
 
 ```bash
 sudo useradd -m -s /bin/bash deploy || true
+sudo groupadd --system freebbs-agent-config || true
+sudo groupadd --system freebbs-agent || true
+id -u freebbs-agent >/dev/null 2>&1 || \
+  sudo useradd --system --no-create-home --shell /usr/sbin/nologin \
+  --gid freebbs-agent-config --groups freebbs-agent freebbs-agent
 sudo mkdir -p /data/www/freebbs-agent
 sudo mkdir -p /etc/free-bbs
 sudo chown -R deploy:deploy /data/www/freebbs-agent
-sudo chown -R deploy:deploy /etc/free-bbs
+sudo chown root:deploy /etc/free-bbs
+sudo chmod 751 /etc/free-bbs
 ```
 
 ## 2. 环境变量文件
@@ -32,13 +38,41 @@ sudo chown -R deploy:deploy /etc/free-bbs
 在服务器创建 `/etc/free-bbs/freebbs-agent.env`：
 
 ```bash
-AGENT_API_KEY=replace-me
-AGENT_BASE_URL=https://cloud.infini-ai.com/maas/v1
-AGENT_MODEL=glm-5.1
+AGENT_SETTINGS_SOCKET=/run/free-bbs/agent-config.sock
+AGENT_SERVICE_TOKEN=replace-with-the-same-long-random-token-used-by-free-bbs-server
+AGENT_SETTINGS_TIMEOUT_SECONDS=2
+AGENT_SETTINGS_CACHE_TTL_SECONDS=30
+AGENT_SETTINGS_STALE_TTL_SECONDS=300
 AGENT_HOST=127.0.0.1
 AGENT_PORT=5001
 AGENT_TIMEOUT_SECONDS=60
 AGENT_SYSTEM_PROMPT=你是 FREE-BBS 的 AI 助手。
+```
+
+生产环境不要再把大模型 API key、base URL 或模型名放进这个文件；这些内容由管理员在主站
+“系统设置”中维护，Agent 通过 `/run/free-bbs/agent-config.sock` 获取。这里的
+`AGENT_SERVICE_TOKEN` 必须与 FREE-BBS 主服务配置完全一致，并应使用长随机值。
+
+主服务需要先创建 Unix Domain Socket。后端与 Agent 分别使用独立系统用户，但都属于
+`freebbs-agent-config` 组；socket 为 `0660`、运行目录为 `0750`。前端和部署用户不得加入
+这个组。配置接口只能挂载在该 socket 上，不能挂载到公开 HTTP listener 或由 Nginx 代理。
+
+```bash
+sudo chown deploy:freebbs-agent /etc/free-bbs/freebbs-agent.env
+sudo chmod 640 /etc/free-bbs/freebbs-agent.env
+```
+
+需要重建课程资料索引时，以 Agent 服务用户运行构建脚本，使它能读取自己的环境文件、连接
+内部 socket 并写入课程资料根目录：
+
+```bash
+sudo -u freebbs-agent sh -c '
+  set -a
+  . /etc/free-bbs/freebbs-agent.env
+  set +a
+  cd /data/www/freebbs-agent
+  .venv/bin/python scripts/build_rag_index.py
+'
 ```
 
 ## 3. systemd 服务
@@ -52,14 +86,20 @@ sudo systemctl enable free-bbs-agent
 sudo systemctl start free-bbs-agent
 ```
 
+更新仓库中的 unit 模板后，需要再次复制它并执行 `daemon-reload`，否则新增的 socket 默认值
+和服务加固选项不会生效。
+
 服务默认使用：
 
 - 工作目录：`/data/www/freebbs-agent`
 - 环境文件：`/etc/free-bbs/freebbs-agent.env`
 - 服务名：`free-bbs-agent`
-- 运行用户：`deploy`
+- 运行用户：`freebbs-agent`
+- socket 共享组：`freebbs-agent-config`
 
-如果服务器用户名或路径不同，需要同步修改 `deploy/systemd/free-bbs-agent.service` 和 GitHub repository variables。
+`deploy` 仅负责同步代码和重启服务，不运行 Agent，也不应加入 socket 共享组。如果服务器
+路径不同，需要同步修改 `deploy/systemd/free-bbs-agent.service` 和 GitHub repository
+variables。
 
 ## 4. sudoers
 
