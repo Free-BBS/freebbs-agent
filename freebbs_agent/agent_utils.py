@@ -177,13 +177,14 @@ class AgentMux:
     falling back to general chat.
     """
 
-    def __init__(self, agents: list[FreeBBSAgent]):
+    def __init__(self, agents: list[FreeBBSAgent], online_router=None):
         """Create a mux from ordered agent instances."""
 
         if not agents:
             raise ValueError("AgentMux requires at least one agent")
         self._agents = agents
         self._agents_by_name = {agent.name: agent for agent in agents}
+        self._online_router = online_router
 
     def select(self, invocation: AgentInvocation) -> FreeBBSAgent:
         """Return the agent selected for this invocation.
@@ -202,8 +203,17 @@ class AgentMux:
                     return agent
             raise ValueError(f"unknown agent: {requested_agent}")
 
+        # Preserve deterministic scene routing before consulting the online router.
         for agent in self._agents:
+            if agent.name in {"general_chat", "rag"}:
+                continue
             if agent.can_handle(invocation):
                 return agent
+
+        if self._online_router is not None:
+            decision = self._online_router.route(invocation)
+            selected = self._agents_by_name.get(decision.agent)
+            if selected is not None:
+                return selected
 
         return self._agents_by_name.get("general_chat", self._agents[0])

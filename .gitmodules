@@ -1,0 +1,3 @@
+[submodule "data/rag/source/2025HardWareContestOptionalPDFs_THUEE"]
+	path = data/rag/source/2025HardWareContestOptionalPDFs_THUEE
+	url = https://github.com/Lucas-Song-zero/2025HardWareContestOptionalPDFs_THUEE.git

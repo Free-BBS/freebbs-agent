@@ -3,3 +3,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .env
+
+# Local RAG artifacts; regenerate them with the scripts documented in README.md.
+data/models/
+data/rag/index.faiss
+data/rag/metadata.jsonl

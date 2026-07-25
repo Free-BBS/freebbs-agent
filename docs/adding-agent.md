@@ -303,3 +303,14 @@ scripts/ci-validate.sh
 - 新 agent 的 `can_handle(...)` 要尽量明确，避免误接请求
 - 需要查数据库、搜索、RAG 时，先封装成单独函数或 service，再让 agent 调用
 - `GeneralChatAgent` 应保持兜底，不承担具体业务场景逻辑
+
+## 10. RAG Agent 参考实现
+
+仓库内的一期轻量 RAG 可作为模板：
+
+- `freebbs_agent/rag_agent.py`：独立 `rag` agent，显式 `agent=rag` 路由
+- `freebbs_agent/rag/embeddings.py`：本地优先、API 可选的 embedding provider 抽象
+- `freebbs_agent/rag/faiss_store.py`：FAISS 向量索引读写与 TopK 检索
+- `scripts/build_rag_index.py`：离线建库脚本（拉取资料、切分、向量化、落盘）
+
+建议开发顺序是先完成离线建库，再接在线检索。这样可以把数据问题与在线路由问题分开调试。

@@ -132,6 +132,24 @@ class AgentConfig:
     port: int
     request_timeout_seconds: float
     system_prompt: str
+    rag_enabled: bool = False
+    rag_index_path: str = "data/rag/index.faiss"
+    rag_metadata_path: str = "data/rag/metadata.jsonl"
+    rag_top_k: int = 5
+    rag_max_context_chunks: int = 4
+    rag_embedding_provider: str = "local"
+    rag_local_embedding_model: str = "BAAI/bge-small-zh-v1.5"
+    rag_local_embedding_dim: int = 512
+    rag_local_model_dir: str | None = None
+    rag_local_files_only: bool = False
+    rag_hf_endpoint: str | None = None
+    rag_embedding_api_key: str | None = None
+    rag_embedding_base_url: str | None = None
+    rag_embedding_model: str = "text-embedding-3-small"
+    online_router_enabled: bool = True
+    online_router_confidence_threshold: float = 0.7
+    rag_query_augmentation_enabled: bool = True
+    rag_max_subqueries: int = 3
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -145,4 +163,23 @@ class AgentConfig:
             port=int(os.getenv("AGENT_PORT", "5001")),
             request_timeout_seconds=float(os.getenv("AGENT_TIMEOUT_SECONDS", "60")),
             system_prompt=system_prompt.strip() if system_prompt and system_prompt.strip() else DEFAULT_SYSTEM_PROMPT,
+            rag_enabled=os.getenv("RAG_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
+            rag_index_path=os.getenv("RAG_INDEX_PATH", "data/rag/index.faiss"),
+            rag_metadata_path=os.getenv("RAG_METADATA_PATH", "data/rag/metadata.jsonl"),
+            rag_top_k=int(os.getenv("RAG_TOP_K", "5")),
+            rag_max_context_chunks=int(os.getenv("RAG_MAX_CONTEXT_CHUNKS", "4")),
+            rag_embedding_provider=os.getenv("RAG_EMBEDDING_PROVIDER", "local"),
+            rag_local_embedding_model=os.getenv("RAG_LOCAL_EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5"),
+            rag_local_embedding_dim=int(os.getenv("RAG_LOCAL_EMBEDDING_DIM", "512")),
+            rag_local_model_dir=os.getenv("RAG_LOCAL_MODEL_DIR"),
+            rag_local_files_only=os.getenv("RAG_LOCAL_FILES_ONLY", "false").lower() in {"1", "true", "yes", "on"},
+            rag_hf_endpoint=os.getenv("RAG_HF_ENDPOINT"),
+            rag_embedding_api_key=os.getenv("RAG_EMBEDDING_API_KEY"),
+            rag_embedding_base_url=os.getenv("RAG_EMBEDDING_BASE_URL"),
+            rag_embedding_model=os.getenv("RAG_EMBEDDING_MODEL", "text-embedding-3-small"),
+            online_router_enabled=os.getenv("ONLINE_ROUTER_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
+            online_router_confidence_threshold=float(os.getenv("ONLINE_ROUTER_CONFIDENCE_THRESHOLD", "0.7")),
+            rag_query_augmentation_enabled=os.getenv("RAG_QUERY_AUGMENTATION_ENABLED", "true").lower()
+            in {"1", "true", "yes", "on"},
+            rag_max_subqueries=int(os.getenv("RAG_MAX_SUBQUERIES", "3")),
         )
