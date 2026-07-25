@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import threading
+
 from .agent_utils import AgentInvocation, Any, ChatOptions, FreeBBSAgent, Iterator
 from .rag.embeddings import build_embedding_client
 from .rag.faiss_store import FaissVectorStore, RetrievedChunk
+from .rag.paths import resolve_rag_store_paths
 from .rag.query_planner import QueryPlan, QueryPlanner
 
 
@@ -13,6 +16,8 @@ class RagAgent(FreeBBSAgent):
         super().__init__(config, chat_client)
         self._embedder = None
         self._store = None
+        self._store_paths = None
+        self._store_lock = threading.Lock()
         self._planner = QueryPlanner(config, chat_client)
 
     def can_handle(self, invocation: AgentInvocation) -> bool:
@@ -51,18 +56,38 @@ class RagAgent(FreeBBSAgent):
         yield from self.stream_llm(messages, invocation.options)
 
     def _retrieve(self, plan: QueryPlan) -> list[RetrievedChunk]:
-        if self._embedder is None:
-            self._embedder = build_embedding_client(self.config)
-        if self._store is None:
-            self._store = FaissVectorStore.load(
-                self.config.rag_index_path,
-                self.config.rag_metadata_path,
-            )
+        store_paths = self._resolve_store_paths()
+
+        with self._store_lock:
+            if self._embedder is None:
+                self._embedder = build_embedding_client(self.config)
+            embedder = self._embedder
+
+            if self._store is None or self._store_paths != store_paths:
+                self._store = FaissVectorStore.load(
+                    store_paths[0],
+                    store_paths[1],
+                )
+                self._store_paths = store_paths
+            store = self._store
+
         ranked_lists = []
         for query in plan.queries(self.config.rag_max_subqueries):
-            query_vector = self._embedder.embed_query(query)
-            ranked_lists.append(self._store.search(query_vector, top_k=self.config.rag_top_k))
+            query_vector = embedder.embed_query(query)
+            ranked_lists.append(store.search(query_vector, top_k=self.config.rag_top_k))
         return _reciprocal_rank_fusion(ranked_lists, top_k=self.config.rag_top_k)
+
+    def _resolve_store_paths(self) -> tuple[str, str]:
+        root_getter = getattr(self.chat_client, "course_materials_root", None)
+        course_materials_root = (
+            root_getter() if callable(root_getter) else self.config.course_materials_root
+        )
+
+        return resolve_rag_store_paths(
+            self.config.rag_index_path,
+            self.config.rag_metadata_path,
+            course_materials_root,
+        )
 
     def _with_retrieved_context(
         self,

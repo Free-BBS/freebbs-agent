@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .agent_utils import AgentInvocation
 from .ai_client import AIClientError
+from .rag.paths import resolve_rag_store_paths
 
 
 ROUTER_PROMPT = """你是 FREE-BBS 的请求路由器，只做分类，不回答问题。
@@ -51,12 +52,24 @@ class OnlineAgentRouter:
             return RouteDecision(agent="general_chat", confidence=0.0, mode="fallback")
 
     def _rag_available(self) -> bool:
-        return (
-            self.config.online_router_enabled
-            and self.config.rag_enabled
-            and Path(self.config.rag_index_path).is_file()
-            and Path(self.config.rag_metadata_path).is_file()
-        )
+        if not self.config.online_router_enabled or not self.config.rag_enabled:
+            return False
+
+        try:
+            root_getter = getattr(self.chat_client, "course_materials_root", None)
+            course_materials_root = (
+                root_getter() if callable(root_getter) else self.config.course_materials_root
+            )
+
+            index_path, metadata_path = resolve_rag_store_paths(
+                self.config.rag_index_path,
+                self.config.rag_metadata_path,
+                course_materials_root,
+            )
+
+            return Path(index_path).is_file() and Path(metadata_path).is_file()
+        except (AIClientError, OSError, RuntimeError, ValueError):
+            return False
 
     def _conversation_text(self, invocation: AgentInvocation) -> str:
         messages = [item for item in invocation.messages if item["role"] in {"user", "assistant"}]

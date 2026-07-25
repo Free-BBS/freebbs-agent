@@ -11,8 +11,12 @@ from freebbs_agent.agent_utils import AgentInvocation, ChatOptions
 
 
 class FakeChatClient:
-    def __init__(self):
+    def __init__(self, course_materials_root: str = ""):
         self.calls = []
+        self._course_materials_root = course_materials_root
+
+    def course_materials_root(self):
+        return self._course_materials_root
 
     def chat(self, messages, *, model=None, temperature=None, max_tokens=None):
         self.calls.append(
@@ -151,6 +155,31 @@ class RagAgentTest(unittest.TestCase):
             self.assertEqual(result["query_plan"]["standalone_query"], "解释频域分析")
             self.assertEqual(len(chat_client.calls), 2)
 
+    def test_relative_rag_paths_resolve_under_managed_course_root(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            relative_index_path = "data/rag/index.faiss"
+            relative_metadata_path = "data/rag/metadata.jsonl"
+            index_path = str((Path(temp_dir) / relative_index_path).resolve())
+            metadata_path = str((Path(temp_dir) / relative_metadata_path).resolve())
+            build_index(index_path, metadata_path)
+
+            config = make_config(relative_index_path, relative_metadata_path)
+            chat_client = FakeChatClient(course_materials_root=temp_dir)
+            agent = RagAgent(config, chat_client)
+            invocation = AgentInvocation(
+                payload={"agent": "rag", "message": "解释频域分析"},
+                messages=[{"role": "user", "content": "解释频域分析"}],
+                options=ChatOptions(),
+            )
+
+            result = agent.run(invocation)
+
+            self.assertTrue(result["sources"])
+            self.assertEqual(
+                agent._store_paths,
+                (index_path, metadata_path),
+            )
+
     def test_query_augmentation_uses_multiple_queries(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             index_path = str(Path(temp_dir) / "index.faiss")
@@ -215,6 +244,39 @@ class RagAgentTest(unittest.TestCase):
                 json={"message": "课程资料里如何解释傅里叶变换？"},
                 environ_base={"REMOTE_ADDR": "127.0.0.1"},
             )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.get_json()["agent"], "rag")
+
+    def test_app_routes_relative_rag_paths_from_managed_course_root(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            relative_index_path = "data/rag/index.faiss"
+            relative_metadata_path = "data/rag/metadata.jsonl"
+            build_index(
+                str(Path(temp_dir) / relative_index_path),
+                str(Path(temp_dir) / relative_metadata_path),
+            )
+            config = make_config(relative_index_path, relative_metadata_path)
+
+            class RoutingChatClient(FakeChatClient):
+                def chat(self, messages, *, model=None, temperature=None, max_tokens=None):
+                    self.calls.append({"messages": messages})
+                    prompt = messages[0]["content"]
+                    if "请求路由器" in prompt:
+                        return {"answer": '{"agent":"rag","confidence":0.95}', "model": "test-model"}
+                    if "检索规划器" in prompt:
+                        return {
+                            "answer": '{"standalone_query":"傅里叶变换课程知识","subqueries":[]}',
+                            "model": "test-model",
+                        }
+                    return {"answer": "rag-answer", "model": "test-model", "finish_reason": "stop"}
+
+            app = create_app(config, RoutingChatClient(course_materials_root=temp_dir))
+            response = app.test_client().post(
+                "/api/v1/chat",
+                json={"message": "课程资料里如何解释傅里叶变换？"},
+                environ_base={"REMOTE_ADDR": "127.0.0.1"},
+            )
+
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.get_json()["agent"], "rag")
 
