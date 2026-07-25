@@ -1,0 +1,93 @@
+[
+  {
+    "id": "algo-design-methods",
+    "question": "根据数算课程复习资料，课程总结了哪些主要算法设计思想？每类给一个例子。",
+    "reference_facts": [
+      "蛮力法",
+      "分治法",
+      "减治法",
+      "变治法",
+      "贪心算法",
+      "动态规划",
+      "回溯法",
+      "分支定界法",
+      "随机算法"
+    ],
+    "expected_source_keywords": ["freebbs-course-outlines"]
+  },
+  {
+    "id": "sorting-comparison",
+    "question": "按照课程资料比较快速排序、归并排序和堆排序的时间复杂度、稳定性与附加存储。",
+    "reference_facts": [
+      "快速排序平均 O(n log n)",
+      "快速排序不稳定",
+      "归并排序 O(n log n)",
+      "归并排序需要 O(n) 附加空间",
+      "堆排序 O(n log n)",
+      "堆排序不稳定"
+    ],
+    "expected_source_keywords": ["freebbs-course-outlines"]
+  },
+  {
+    "id": "dijkstra-floyd",
+    "question": "课程复习资料如何区分 Dijkstra 和 Floyd？请说明问题类型、基本思想和复杂度。",
+    "reference_facts": [
+      "Dijkstra 解决单源最短路径",
+      "Dijkstra 使用贪心思想",
+      "Floyd 解决全源最短路径",
+      "Floyd 使用动态规划思想",
+      "Floyd 时间复杂度 O(n^3)"
+    ],
+    "expected_source_keywords": ["freebbs-course-outlines"]
+  },
+  {
+    "id": "esp8266-modes",
+    "question": "根据平台硬件资料，ESP8266 的 STA、AP 和 AP+STA 模式分别适合什么场景？",
+    "reference_facts": [
+      "STA 模式连接已有 WiFi 网络",
+      "AP 模式创建 WiFi 网络",
+      "AP+STA 同时提供局域网接入并连接外部网络"
+    ],
+    "expected_source_keywords": ["thuee-hardware-contest"]
+  },
+  {
+    "id": "pcb-gerber",
+    "question": "根据平台 PCB 教程，完成设计后如何导出 Gerber 并进入打板流程？",
+    "reference_facts": [
+      "从设计工具导出 Gerber 文件",
+      "可以使用一键导出",
+      "将 Gerber 文件提交给 PCB 制造服务"
+    ],
+    "expected_source_keywords": ["thuee-hardware-contest"]
+  },
+  {
+    "id": "dft-dtft",
+    "question": "开放 DSP 课程资料如何解释 DFT 与 DTFT 的关系？",
+    "reference_facts": [
+      "DFT 可以看作对 DTFT 的等间隔采样",
+      "DFT 只包含有限个频率样本",
+      "频域采样与时域周期延拓相关"
+    ],
+    "expected_source_keywords": ["digital-signal-processing", "signals-and-systems"]
+  },
+  {
+    "id": "bilinear-transform",
+    "question": "根据开放 DSP 课程，双线性变换用于数字滤波器设计时有哪些关键步骤和频率扭曲问题？",
+    "reference_facts": [
+      "把模拟域传递函数映射到数字域",
+      "频率映射是非线性的",
+      "可以使用 prewarping 补偿关键频率"
+    ],
+    "expected_source_keywords": ["digital-signal-processing/filter_design"]
+  },
+  {
+    "id": "sampling-aliasing",
+    "question": "根据开放信号课程，采样定理、奈奎斯特频率和混叠之间是什么关系？",
+    "reference_facts": [
+      "采样频率需要高于信号最高频率的两倍",
+      "低于条件时频谱会重叠",
+      "频谱重叠产生混叠且难以恢复原信号"
+    ],
+    "expected_source_keywords": ["signals-and-systems", "digital-signal-processing"]
+  }
+]

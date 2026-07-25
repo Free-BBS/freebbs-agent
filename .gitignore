@@ -8,5 +8,6 @@ __pycache__/
 data/models/
 data/rag/index.faiss
 data/rag/metadata.jsonl
+data/rag/evals/results/
 data/rag/source/signals-and-systems-lecture/
 data/rag/source/digital-signal-processing-lecture/

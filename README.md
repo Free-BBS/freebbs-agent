@@ -220,6 +220,22 @@ curl -X POST http://127.0.0.1:5001/api/v1/chat \
 
 返回会额外包含 `agent` 与 `sources` 字段，便于前端展示引用来源。
 
+### 对比有无 RAG 的回答质量
+
+构建索引并配置模型 API 后，可以对同一组问题生成无 RAG 与有 RAG 的成对回答，
+并进行交替顺序的盲评：
+
+```bash
+export RAG_ENABLED=true
+export RAG_LOCAL_MODEL_DIR="/path/to/bge-small-zh-v1.5"
+python scripts/evaluate_rag_answers.py
+```
+
+默认问题集为 `data/rag/evals/rag_answer_quality_queries.json`，结果写入被 Git 忽略的
+`data/rag/evals/results/rag_answer_quality.json`。评分维度包括事实正确性、参考事实覆盖、
+资料忠实度、相关性和来源可追溯性。使用同一个生成模型作为评审只能作为开发期信号，
+重要结论仍应抽样人工复核。
+
 ### 一键在 5002 启用 RAG 服务
 
 ```bash
