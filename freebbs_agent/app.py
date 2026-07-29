@@ -9,6 +9,7 @@ from .agents import create_default_mux
 from .ai_client import AIClientError, ChatClient
 from .config import AgentConfig
 from .dev_page import DEV_AGENT_TEST_HTML
+from .navigation_dev_page import NAVIGATION_AGENT_TEST_HTML
 from .security import add_local_cors_headers, is_loopback_addr, reject_non_loopback_requests
 
 
@@ -29,6 +30,10 @@ def create_app(config: AgentConfig | None = None, chat_client: ChatClient | None
     @app.get("/dev/agent-test")
     def dev_agent_test():
         return Response(DEV_AGENT_TEST_HTML, mimetype="text/html")
+
+    @app.get("/dev/navigation-test")
+    def dev_navigation_test():
+        return Response(NAVIGATION_AGENT_TEST_HTML, mimetype="text/html")
 
     @app.post("/api/v1/chat")
     def chat():
