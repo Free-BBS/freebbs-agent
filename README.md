@@ -6,7 +6,20 @@ FREE-BBS 的本地 Agent 服务，基于 Python Flask。
 
 - `GET /health`：服务健康检查
 - `POST /api/v1/chat`：普通 AI 问答
+- `POST /api/v1/chat`（`agent=info`）：通过标准 Tool Call 查询网络学堂课程、公告和 THU Info
+- `POST /api/v1/info/jobs/get`：代理查询 Info Sub-Agent 的认证/异步任务
 - `GET /dev/navigation-test`：导引 Agent 可视化测试页
+
+Info Sub-Agent 的配置、可信身份请求头、调用示例和登录任务处理见
+[docs/info-agent-integration.md](docs/info-agent-integration.md)。
+
+主页现有 JSON 格式保持兼容；Info 查询只需使用：
+
+```json
+{"agent": "info", "message": "查询信号与系统最新公告"}
+```
+
+UID、学号和权限不放入该 JSON，必须由 FreeBBS 后端通过文档规定的受保护请求头注入。
 
 服务默认只监听 `127.0.0.1:5001`，并且会拒绝非 loopback 来源的请求。
 

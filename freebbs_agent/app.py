@@ -11,14 +11,25 @@ from .config import AgentConfig
 from .dev_page import DEV_AGENT_TEST_HTML
 from .navigation_dev_page import NAVIGATION_AGENT_TEST_HTML
 from .security import add_local_cors_headers, is_loopback_addr, reject_non_loopback_requests
+from .info_agent import InfoAgentClient, TrustedContextError, trusted_context_from_headers
 
 
-def create_app(config: AgentConfig | None = None, chat_client: ChatClient | None = None, agent_mux=None) -> Flask:
+def create_app(
+    config: AgentConfig | None = None,
+    chat_client: ChatClient | None = None,
+    agent_mux=None,
+    info_agent_client: InfoAgentClient | None = None,
+) -> Flask:
     app_config = config or AgentConfig.from_env()
     app = Flask(__name__)
     app.config["AGENT_CONFIG"] = app_config
     app.chat_client = chat_client or ChatClient(app_config)  # type: ignore[attr-defined]
-    app.agent_mux = agent_mux or create_default_mux(app_config, app.chat_client)  # type: ignore[attr-defined]
+    app.info_agent_client = info_agent_client or InfoAgentClient(app_config)  # type: ignore[attr-defined]
+    app.agent_mux = agent_mux or create_default_mux(  # type: ignore[attr-defined]
+        app_config,
+        app.chat_client,
+        app.info_agent_client,
+    )
 
     app.before_request(reject_non_loopback_requests)
     app.after_request(add_local_cors_headers)
@@ -44,6 +55,13 @@ def create_app(config: AgentConfig | None = None, chat_client: ChatClient | None
         try:
             invocation = build_invocation(payload, app_config)
             selected_agent = app.agent_mux.select(invocation)  # type: ignore[attr-defined]
+            if selected_agent.name == "info":
+                invocation.payload["_trusted_context"] = trusted_context_from_headers(
+                    request.headers,
+                    app_config.freebbs_agent_internal_token,
+                )
+        except TrustedContextError as exc:
+            return jsonify({"error": {"code": exc.code, "message": str(exc)}}), exc.status_code
         except ValueError as exc:
             return validation_error(str(exc))
 
@@ -65,6 +83,28 @@ def create_app(config: AgentConfig | None = None, chat_client: ChatClient | None
             return jsonify({"error": {"code": "ai_provider_error", "message": str(exc)}}), 502
 
         return jsonify(result)
+
+    @app.post("/api/v1/info/jobs/get")
+    def get_info_job():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return validation_error("request body must be a JSON object")
+        job_id = payload.get("job_id")
+        if not isinstance(job_id, str) or not job_id.startswith("job_"):
+            return validation_error("job_id must be a valid Info Agent job ID")
+        try:
+            trusted_context = trusted_context_from_headers(
+                request.headers,
+                app_config.freebbs_agent_internal_token,
+            )
+            envelope = app.info_agent_client.get_job(job_id, trusted_context)  # type: ignore[attr-defined]
+        except TrustedContextError as exc:
+            return jsonify({"error": {"code": exc.code, "message": str(exc)}}), exc.status_code
+        except Exception:
+            return jsonify({"error": {"code": "info_agent_unavailable", "message": "Info Agent service unavailable."}}), 502
+
+        status = 202 if envelope.get("status") == "pending" else 200
+        return jsonify(envelope), status
 
     return app
 

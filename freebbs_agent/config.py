@@ -150,6 +150,12 @@ class AgentConfig:
     navigation_llm_enabled: bool = True
     navigation_model: str | None = None
     navigation_llm_confidence_threshold: float = 0.7
+    info_agent_enabled: bool = False
+    info_agent_base_url: str = "http://127.0.0.1:4310"
+    info_agent_internal_token: str | None = None
+    info_agent_timeout_seconds: float = 30.0
+    info_agent_auto_authenticate: bool = True
+    freebbs_agent_internal_token: str | None = None
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -184,4 +190,11 @@ class AgentConfig:
                 0.0,
                 min(1.0, float(os.getenv("NAVIGATION_LLM_CONFIDENCE_THRESHOLD", "0.7"))),
             ),
+            info_agent_enabled=os.getenv("INFO_AGENT_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
+            info_agent_base_url=os.getenv("INFO_AGENT_BASE_URL", "http://127.0.0.1:4310").rstrip("/"),
+            info_agent_internal_token=os.getenv("INFO_AGENT_INTERNAL_TOKEN") or None,
+            info_agent_timeout_seconds=float(os.getenv("INFO_AGENT_TIMEOUT_SECONDS", "30")),
+            info_agent_auto_authenticate=os.getenv("INFO_AGENT_AUTO_AUTHENTICATE", "true").lower()
+            in {"1", "true", "yes", "on"},
+            freebbs_agent_internal_token=os.getenv("FREEBBS_AGENT_INTERNAL_TOKEN") or None,
         )
