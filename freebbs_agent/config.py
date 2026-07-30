@@ -146,6 +146,10 @@ class AgentConfig:
     rag_embedding_api_key: str | None = None
     rag_embedding_base_url: str | None = None
     rag_embedding_model: str = "text-embedding-3-small"
+    web_base_url: str = ""
+    navigation_llm_enabled: bool = True
+    navigation_model: str | None = None
+    navigation_llm_confidence_threshold: float = 0.7
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -173,4 +177,11 @@ class AgentConfig:
             rag_embedding_api_key=os.getenv("RAG_EMBEDDING_API_KEY"),
             rag_embedding_base_url=os.getenv("RAG_EMBEDDING_BASE_URL"),
             rag_embedding_model=os.getenv("RAG_EMBEDDING_MODEL", "text-embedding-3-small"),
+            web_base_url=os.getenv("FREEBBS_WEB_BASE_URL", "").strip(),
+            navigation_llm_enabled=os.getenv("NAVIGATION_LLM_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
+            navigation_model=os.getenv("NAVIGATION_MODEL") or None,
+            navigation_llm_confidence_threshold=max(
+                0.0,
+                min(1.0, float(os.getenv("NAVIGATION_LLM_CONFIDENCE_THRESHOLD", "0.7"))),
+            ),
         )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .agent_utils import AgentConfig, AgentInvocation, AgentMux, Any, ChatClient, FreeBBSAgent, Iterator
 from .rag_agent import RagAgent
+from .navigation_agent import NavigationAgent
 
 
 class GeneralChatAgent(FreeBBSAgent):
@@ -100,6 +101,7 @@ def create_default_mux(config: AgentConfig, chat_client: ChatClient) -> AgentMux
         [
             CommentMentionAgent(config, chat_client),
             RagAgent(config, chat_client),
+            NavigationAgent(config, chat_client),
             #这里注册新的Agent
             GeneralChatAgent(config, chat_client),
         ]

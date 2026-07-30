@@ -6,6 +6,7 @@ FREE-BBS 的本地 Agent 服务，基于 Python Flask。
 
 - `GET /health`：服务健康检查
 - `POST /api/v1/chat`：普通 AI 问答
+- `GET /dev/navigation-test`：导引 Agent 可视化测试页
 
 服务默认只监听 `127.0.0.1:5001`，并且会拒绝非 loopback 来源的请求。
 
@@ -83,7 +84,7 @@ data: {"done":true}
 
 可选路由参数：
 
-- `agent`：指定 agent。当前支持 `general_chat` / `general` / `chat`、`comment_mention` / `comment` / `comment_at_max`、`rag` / `rag_agent`
+- `agent`：指定 agent。当前支持 `general_chat` / `general` / `chat`、`comment_mention` / `comment` / `comment_at_max`、`rag` / `rag_agent`、`navigation` / `guide` / `navigator` / `intent_router`
 - `source` 或 `channel`：请求来源。当前 `source: "comment"` 且消息包含 `@max` 时，会自动路由到评论区 agent
 
 后端内部会通过 mux 选择 agent。每个 agent 继承统一的 `FreeBBSAgent` 基类，核心入口是 `run(invocation)` 和 `stream(invocation)`；agent 内部可以多次调用 `call_llm(...)` 或执行其它操作。
@@ -111,6 +112,26 @@ data: {"done":true}
 - `RAG_EMBEDDING_API_KEY`：云端 embedding API key（`provider=api` 时使用）
 - `RAG_EMBEDDING_BASE_URL`：云端 embedding base url（可选）
 - `RAG_EMBEDDING_MODEL`：云端 embedding 模型名（默认 `text-embedding-3-small`）
+- `FREEBBS_WEB_BASE_URL`：导引 Agent 生成跳转链接时使用的前端地址；默认返回站内相对路径
+- `NAVIGATION_LLM_ENABLED`：是否启用导引 Agent 的 LLM 增强，默认 `true`；无 key 时自动回退
+- `NAVIGATION_MODEL`：导引 Agent 专用模型；留空时使用 `AGENT_MODEL`
+- `NAVIGATION_LLM_CONFIDENCE_THRESHOLD`：规则路由置信度达到该值时跳过 LLM，默认 `0.7`
+
+## 导引 Agent
+
+导引 Agent 使用规则召回与 LLM 理解，把用户意图映射到知识 RAG、公告通知、课程讨论区、
+课程图谱、PBL 项目和学习印记等模块，并在 `routes` 字段返回可信的白名单链接。API key
+配置在项目根目录 `.env` 的 `AGENT_API_KEY`（或部署环境的同名 Secret）；详见
+[Navigation Agent 文档](docs/navigation-agent.md)。
+
+```bash
+curl -X POST http://127.0.0.1:5001/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"navigation","message":"最近有什么讲座通知？"}'
+```
+
+可视化测试页：`http://127.0.0.1:5001/dev/navigation-test`。独立测试页生成与冒烟
+测试方式见 [Navigation Agent 文档](docs/navigation-agent.md)。
 
 ## 轻量 RAG（一期）
 
