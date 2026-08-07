@@ -31,6 +31,21 @@ class FakeNavigationChatClient:
         raise AssertionError("NavigationAgent must not call the LLM")
 
 
+class FakeSubagent:
+    def __init__(self, name):
+        self.name = name
+        self.invocations = []
+
+    def run(self, invocation):
+        self.invocations.append(invocation)
+        return {
+            "answer": f"{self.name}-answer",
+            "agent": self.name,
+            "status": "success",
+            "finish_reason": "stop",
+        }
+
+
 def make_config() -> AgentConfig:
     return AgentConfig(
         api_key=None,
@@ -61,7 +76,24 @@ class NavigationAgentTest(unittest.TestCase):
         result = self.invoke("帮我检索信号与系统的课程资料和讲义")
         self.assertEqual(result["intent"], "knowledge_search")
         self.assertEqual(result["routes"][0]["module"], "knowledge_rag")
-        self.assertTrue(result["routes"][0]["url"].startswith("https://bbs.example.edu/knowledge/rag?q="))
+        self.assertTrue(result["routes"][0]["url"].startswith("https://bbs.example.edu/knowledge?q="))
+
+    def test_routes_use_prefilled_local_agent_test_pages_without_web_frontend(self):
+        config = AgentConfig(**{**make_config().__dict__, "web_base_url": ""})
+        agent = NavigationAgent(config, UnusedChatClient())
+        message = "帮我检索信号与系统的课程资料和讲义"
+        result = agent.run(
+            AgentInvocation(
+                payload={"agent": "navigation", "message": message},
+                messages=[{"role": "user", "content": message}],
+                options=ChatOptions(),
+            )
+        )
+        url = result["routes"][0]["url"]
+        self.assertTrue(url.startswith("/dev/rag-test?"))
+        self.assertIn("agent=rag", url)
+        self.assertIn("source=navigation_knowledge_rag", url)
+        self.assertIn("message=", url)
 
     def test_routes_announcements(self):
         result = self.invoke("最近有什么讲座通知，报名什么时候截止？")
@@ -89,7 +121,7 @@ class NavigationAgentTest(unittest.TestCase):
         )
         output = "".join(self.agent.stream(invocation))
         self.assertIn("[公告与通知]", output)
-        self.assertIn("https://bbs.example.edu/notifications", output)
+        self.assertIn("https://bbs.example.edu/workbench", output)
 
     def test_app_exposes_agent_and_test_page(self):
         app = create_app(make_config(), UnusedChatClient())
@@ -124,7 +156,7 @@ class NavigationAgentTest(unittest.TestCase):
         self.assertTrue(result["llm_used"])
         self.assertEqual(result["intent"], "course_graph")
         self.assertEqual(result["model"], "fake-guide-model")
-        self.assertTrue(result["routes"][0]["url"].startswith("https://bbs.example.edu/courses?q="))
+        self.assertTrue(result["routes"][0]["url"].startswith("https://bbs.example.edu/course?q="))
         self.assertEqual(chat_client.calls, 1)
 
     def test_high_confidence_rule_skips_llm(self):
@@ -162,6 +194,67 @@ class NavigationAgentTest(unittest.TestCase):
         self.assertEqual(result["llm_status"], "missing_api_key")
         self.assertEqual(result["intent"], "knowledge_search")
         self.assertFalse(result["needs_clarification"])
+
+    def test_auto_delegates_knowledge_search_to_rag(self):
+        rag = FakeSubagent("rag")
+        info = FakeSubagent("info")
+        agent = NavigationAgent(make_config(), UnusedChatClient(), rag_agent=rag, info_agent=info)
+        message = "帮我检索信号与系统的课程资料和讲义"
+        result = agent.run(
+            AgentInvocation(
+                payload={
+                    "agent": "navigation",
+                    "message": message,
+                    "execute_subagent": "auto",
+                },
+                messages=[{"role": "user", "content": message}],
+                options=ChatOptions(),
+            )
+        )
+        self.assertEqual(result["delegation"]["selected"], "rag")
+        self.assertTrue(result["delegation"]["executed"])
+        self.assertEqual(result["subagent"]["agent"], "rag")
+        self.assertEqual(result["answer"], "rag-answer")
+        self.assertEqual(len(rag.invocations), 1)
+        self.assertEqual(len(info.invocations), 0)
+
+    def test_auto_delegates_announcements_to_info_with_trusted_context(self):
+        rag = FakeSubagent("rag")
+        info = FakeSubagent("info")
+        agent = NavigationAgent(make_config(), UnusedChatClient(), rag_agent=rag, info_agent=info)
+        trusted_context = {"uid": "user_1", "permissions": ["thu_info:read"]}
+        message = "查询最近的课程公告和讲座通知"
+        result = agent.run(
+            AgentInvocation(
+                payload={
+                    "agent": "navigation",
+                    "message": message,
+                    "execute_subagent": "auto",
+                    "_trusted_context": trusted_context,
+                },
+                messages=[{"role": "user", "content": message}],
+                options=ChatOptions(),
+            )
+        )
+        self.assertEqual(result["delegation"]["selected"], "info")
+        self.assertEqual(result["subagent"]["agent"], "info")
+        self.assertEqual(info.invocations[0].payload["_trusted_context"], trusted_context)
+        self.assertEqual(len(rag.invocations), 0)
+
+    def test_explicit_subagent_and_invalid_mode(self):
+        rag = FakeSubagent("rag")
+        info = FakeSubagent("info")
+        agent = NavigationAgent(make_config(), UnusedChatClient(), rag_agent=rag, info_agent=info)
+        message = "最近有什么通知"
+        invocation = AgentInvocation(
+            payload={"agent": "navigation", "message": message, "execute_subagent": "rag"},
+            messages=[{"role": "user", "content": message}],
+            options=ChatOptions(),
+        )
+        self.assertEqual(agent.run(invocation)["delegation"]["selected"], "rag")
+        invocation.payload["execute_subagent"] = "bad"
+        with self.assertRaises(ValueError):
+            agent.run(invocation)
 
 
 if __name__ == "__main__":

@@ -1,3 +1,6 @@
+from html import escape
+
+
 DEV_AGENT_TEST_HTML = """<!doctype html>
 <html lang="zh-CN">
   <head>
@@ -296,6 +299,23 @@ DEV_AGENT_TEST_HTML = """<!doctype html>
       const submitButton = document.getElementById("submit");
       const clearButton = document.getElementById("clear");
 
+      const query = new URLSearchParams(window.location.search);
+      const presets = {
+        agent: "agent",
+        source: "source",
+        channel: "channel",
+        message: "message"
+      };
+      for (const [parameter, elementId] of Object.entries(presets)) {
+        const value = query.get(parameter);
+        if (value !== null) {
+          document.getElementById(elementId).value = value;
+        }
+      }
+      if (query.get("stream") === "false") {
+        document.getElementById("stream").checked = false;
+      }
+
       function readPayload() {
         const payload = {
           agent: document.getElementById("agent").value.trim() || undefined,
@@ -420,3 +440,37 @@ DEV_AGENT_TEST_HTML = """<!doctype html>
   </body>
 </html>
 """
+
+
+def build_scenario_test_page(
+    *,
+    title: str,
+    description: str,
+    agent: str,
+    source: str,
+    default_message: str,
+) -> str:
+    """Build a dedicated visual test page with a fixed scenario identity."""
+
+    safe_title = escape(title)
+    safe_description = escape(description)
+    page = DEV_AGENT_TEST_HTML
+    page = page.replace("<title>FREE-BBS Agent Test</title>", f"<title>{safe_title}</title>")
+    page = page.replace("<h1>Agent Test</h1>", f"<h1>{safe_title}</h1>")
+    page = page.replace(
+        "本地开发页，直接调用 <code>/api/v1/chat</code>。",
+        f"{safe_description}，直接调用 <code>/api/v1/chat</code>。",
+    )
+    page = page.replace(
+        '<label>\n            Agent\n            <input id="agent" value="general_chat" placeholder="general_chat / comment_mention" />\n          </label>',
+        '<input id="agent" type="hidden" value="' + escape(agent, quote=True) + '" />',
+    )
+    page = page.replace(
+        '<input id="source" value="direct_chat" placeholder="direct_chat" />',
+        '<input id="source" value="' + escape(source, quote=True) + '" readonly />',
+    )
+    page = page.replace(
+        "解释一下傅里叶变换在电子信息知识体系里的位置。",
+        escape(default_message),
+    )
+    return page

@@ -99,6 +99,11 @@ class InfoAgentBridgeTest(unittest.TestCase):
         automatic.payload.pop("agent")
         self.assertTrue(self.bridge.can_handle(automatic))
 
+    def test_does_not_capture_another_explicit_agent(self):
+        self.assertFalse(
+            self.bridge.can_handle(self.invocation("查询最近课程公告", agent="navigation"))
+        )
+
     def test_bridge_calls_standard_info_service_without_identity_in_goal(self):
         result = self.bridge.run(self.invocation())
         self.assertEqual(result["answer"], "查询到两门课程。")
@@ -196,6 +201,24 @@ class InfoAgentAppTest(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["agent"], "info")
+        self.assertEqual(self.info_client.executions[0][1]["uid"], "user_1")
+
+    def test_navigation_can_delegate_to_info_with_trusted_headers(self):
+        response = self.client.post(
+            "/api/v1/chat",
+            json={
+                "agent": "navigation",
+                "execute_subagent": "auto",
+                "message": "查询最近的课程公告和讲座通知",
+            },
+            headers=self.headers,
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body["agent"], "navigation")
+        self.assertEqual(body["delegation"]["selected"], "info")
+        self.assertEqual(body["subagent"]["agent"], "info")
         self.assertEqual(self.info_client.executions[0][1]["uid"], "user_1")
 
     def test_chat_rejects_frontend_identity_without_backend_token(self):

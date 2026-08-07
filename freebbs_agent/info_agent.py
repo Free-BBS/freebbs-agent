@@ -174,6 +174,8 @@ class InfoAgentBridge(FreeBBSAgent):
         requested_agent = invocation.payload.get("agent")
         if requested_agent == self.name or requested_agent in self.aliases:
             return True
+        if requested_agent is not None:
+            return False
         return self.config.info_agent_enabled and bool(INFO_QUERY_PATTERN.search(invocation.message))
 
     def run(self, invocation: AgentInvocation) -> dict[str, Any]:

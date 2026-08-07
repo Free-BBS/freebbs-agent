@@ -15,6 +15,9 @@ class NavigationTarget:
     module: str
     title: str
     path: str
+    test_path: str
+    test_agent: str
+    test_source: str
     description: str
     keywords: tuple[tuple[str, int], ...]
 
@@ -24,7 +27,10 @@ TARGETS = (
         intent="knowledge_search",
         module="knowledge_rag",
         title="知识 RAG Agent",
-        path="/knowledge/rag",
+        path="/knowledge",
+        test_path="/dev/rag-test",
+        test_agent="rag",
+        test_source="navigation_knowledge_rag",
         description="检索课程资料、讲义、知识点解释与学习资源。",
         keywords=(
             ("资料", 4), ("讲义", 4), ("课件", 4), ("知识库", 4), ("rag", 5),
@@ -36,7 +42,10 @@ TARGETS = (
         intent="announcement",
         module="announcements",
         title="公告与通知",
-        path="/notifications",
+        path="/workbench",
+        test_path="/dev/info-test",
+        test_agent="info",
+        test_source="navigation_announcements",
         description="查看课程、考试、作业、讲座、活动和项目通知。",
         keywords=(
             ("公告", 5), ("通知", 5), ("截止", 4), ("ddl", 4), ("deadline", 4),
@@ -48,7 +57,10 @@ TARGETS = (
         intent="course_discussion",
         module="course_discussion",
         title="课程讨论区",
-        path="/discussions",
+        path="/discussion",
+        test_path="/dev/comment-test",
+        test_agent="comment",
+        test_source="navigation_course_discussion",
         description="提问、交流解题思路、寻找同学或参与课程讨论。",
         keywords=(
             ("讨论", 5), ("讨论区", 6), ("发帖", 5), ("帖子", 4), ("求助", 3),
@@ -60,7 +72,10 @@ TARGETS = (
         intent="course_graph",
         module="course_graph",
         title="课程与知识图谱",
-        path="/courses",
+        path="/course",
+        test_path="/dev/course-graph-test",
+        test_agent="general",
+        test_source="navigation_course_graph",
         description="查看课程关系、先修知识和推荐学习路径。",
         keywords=(
             ("课程", 3), ("选课", 5), ("先修", 5), ("培养方案", 5), ("知识图谱", 5),
@@ -71,7 +86,10 @@ TARGETS = (
         intent="project",
         module="pbl",
         title="PBL 项目孵化器",
-        path="/projects",
+        path="/development",
+        test_path="/dev/project-test",
+        test_agent="general",
+        test_source="navigation_pbl",
         description="寻找实践项目、项目队友和工程探索机会。",
         keywords=(
             ("项目", 4), ("pbl", 5), ("队友", 5), ("组队", 5), ("实践", 3),
@@ -82,7 +100,10 @@ TARGETS = (
         intent="learning_profile",
         module="learning_profile",
         title="个性化学习印记",
-        path="/profile/learning",
+        path="/profile",
+        test_path="/dev/learning-profile-test",
+        test_agent="general",
+        test_source="navigation_learning_profile",
         description="回顾学习轨迹、能力画像与个人学习状态。",
         keywords=(
             ("学习状态", 5), ("学习记录", 5), ("学习轨迹", 5), ("能力画像", 5),
@@ -99,11 +120,27 @@ class NavigationAgent(FreeBBSAgent):
     aliases = {"guide", "navigator", "intent_router"}
     max_routes = 3
 
+    def __init__(
+        self,
+        config,
+        chat_client,
+        *,
+        rag_agent: FreeBBSAgent | None = None,
+        info_agent: FreeBBSAgent | None = None,
+    ) -> None:
+        super().__init__(config, chat_client)
+        self.rag_agent = rag_agent
+        self.info_agent = info_agent
+
     def can_handle(self, invocation: AgentInvocation) -> bool:
         requested_agent = invocation.payload.get("agent")
         return requested_agent == self.name or requested_agent in self.aliases
 
     def run(self, invocation: AgentInvocation) -> dict[str, Any]:
+        navigation_result = self._navigate(invocation)
+        return self._delegate(invocation, navigation_result)
+
+    def _navigate(self, invocation: AgentInvocation) -> dict[str, Any]:
         routing_query = self._routing_query(invocation)
         ranked = self._rank_targets(routing_query)
         rule_confidence = self._rule_confidence(ranked)
@@ -129,6 +166,57 @@ class NavigationAgent(FreeBBSAgent):
 
         status = "disabled" if not self.config.navigation_llm_enabled else "missing_api_key"
         return self._deterministic_result(ranked, invocation.message, llm_status=status)
+
+    def _delegate(
+        self,
+        invocation: AgentInvocation,
+        navigation_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Optionally execute one routed sub-agent and retain the navigation result."""
+
+        requested = invocation.payload.get("execute_subagent", "none")
+        if requested is True:
+            requested = "auto"
+        elif requested is False or requested is None:
+            requested = "none"
+        if requested not in {"none", "auto", "rag", "info"}:
+            raise ValueError("execute_subagent must be one of: none, auto, rag, info")
+
+        selected = requested
+        if selected == "auto":
+            selected = {
+                "knowledge_search": "rag",
+                "announcement": "info",
+            }.get(navigation_result.get("intent"), "none")
+
+        if navigation_result.get("needs_clarification"):
+            selected = "none"
+
+        subagent = {"rag": self.rag_agent, "info": self.info_agent}.get(selected)
+        result = dict(navigation_result)
+        result["delegation"] = {
+            "requested": requested,
+            "selected": selected,
+            "executed": subagent is not None,
+        }
+        if subagent is None:
+            return result
+
+        child_payload = dict(invocation.payload)
+        child_payload["agent"] = selected
+        child_payload["stream"] = False
+        child_payload["delegated_by"] = self.name
+        child_invocation = AgentInvocation(
+            payload=child_payload,
+            messages=invocation.messages,
+            options=invocation.options,
+        )
+        child_result = subagent.run(child_invocation)
+        result["navigation_answer"] = navigation_result["answer"]
+        result["answer"] = child_result.get("answer", navigation_result["answer"])
+        result["subagent"] = child_result
+        result["delegation"]["status"] = child_result.get("status", "completed")
+        return result
 
     @staticmethod
     def _rule_confidence(ranked: list[tuple[int, NavigationTarget]]) -> float:
@@ -224,7 +312,7 @@ confidence 必须是 0 到 1。模糊请求可返回最多 3 个最可能入口�
                 "intent": target.intent,
                 "module": target.module,
                 "title": target.title,
-                "url": self._target_url(target.path, invocation.message),
+                "url": self._target_url(target, invocation.message),
                 "reason": reasons.get(target.intent) or target.description,
                 "score": score_by_intent.get(target.intent, 0),
             }
@@ -316,14 +404,24 @@ confidence 必须是 0 到 1。模糊请求可返回最多 3 个最可能入口�
                 "intent": target.intent,
                 "module": target.module,
                 "title": target.title,
-                "url": self._target_url(target.path, query),
+                "url": self._target_url(target, query),
                 "reason": target.description,
                 "score": score,
             }
             for score, target in selected
         ]
 
-    def _target_url(self, path: str, query: str) -> str:
+    def _target_url(self, target: NavigationTarget, query: str) -> str:
         base_url = self.config.web_base_url.rstrip("/")
-        url = f"{base_url}{path}" if base_url else path
-        return f"{url}?q={quote_plus(query)}"
+        if base_url:
+            return f"{base_url}{target.path}?q={quote_plus(query)}"
+
+        # In standalone development there is no FREE-BBS web application serving
+        # the production module paths. Route cards to the local visual test bench
+        # and preselect the corresponding agent/scenario instead of opening a 404.
+        return (
+            f"{target.test_path}"
+            f"?agent={quote_plus(target.test_agent)}"
+            f"&source={quote_plus(target.test_source)}"
+            f"&message={quote_plus(query)}"
+        )

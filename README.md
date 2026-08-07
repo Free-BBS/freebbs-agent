@@ -146,6 +146,23 @@ curl -X POST http://127.0.0.1:5001/api/v1/chat \
 可视化测试页：`http://127.0.0.1:5001/dev/navigation-test`。独立测试页生成与冒烟
 测试方式见 [Navigation Agent 文档](docs/navigation-agent.md)。
 
+Navigation 还可以在完成意图识别后执行一个子 Agent。`execute_subagent` 支持：
+
+- `none`：仅返回导航结果（API 默认值，保持原有行为）
+- `auto`：知识检索调用 RAG，公告/通知查询调用 Info
+- `rag`：显式调用 RAG Agent
+- `info`：显式调用 Info Agent
+
+```bash
+curl -X POST http://127.0.0.1:5001/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"navigation","execute_subagent":"auto","message":"帮我检索数据结构课程资料"}'
+```
+
+编排响应保留 `intent`、`routes` 等导航字段，并增加 `delegation` 和 `subagent`；执行成功时
+顶层 `answer` 使用子 Agent 的回答，原导航文案保存在 `navigation_answer`。Info 委派仍要求
+FreeBBS 后端提供受保护身份请求头，测试页不会收集或保存内部 Token。
+
 ## 轻量 RAG（一期）
 
 一期提供独立 `rag_agent`，流程是：

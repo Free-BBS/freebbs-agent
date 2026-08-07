@@ -57,6 +57,25 @@ curl -X POST http://127.0.0.1:5001/api/v1/chat \
 目前支持知识 RAG、公告通知、课程讨论、课程与知识图谱、PBL 项目、个性化学习印记。
 设置 `FREEBBS_WEB_BASE_URL` 可把返回链接指向实际前端；不设置时返回站内相对路径。
 
+## 子 Agent 编排
+
+请求可通过 `execute_subagent` 控制是否在导航后继续执行：
+
+```json
+{
+  "agent": "navigation",
+  "message": "查询数据结构课程资料",
+  "execute_subagent": "auto"
+}
+```
+
+`auto` 将 `knowledge_search` 委派给 RAG、将 `announcement` 委派给 Info；也可使用
+`rag` 或 `info` 强制选择一个子 Agent，使用 `none` 仅执行导航。一次请求最多委派一个
+子 Agent，模糊问题需要澄清时不会执行委派。
+
+Info 委派沿用标准可信身份请求头。浏览器测试页不会要求用户输入内部 Token；若需验证
+完整 Info 链路，应由 FreeBBS 后端或 `curl` 按 `docs/info-agent-integration.md` 注入请求头。
+
 ## 测试
 
 服务启动后访问：
@@ -67,6 +86,8 @@ http://127.0.0.1:5001/dev/navigation-test
 
 页面会在浏览器内保存当前会话的 user/assistant 消息，并在每次请求时通过 `messages`
 一并发送，因此可以连续回答 Agent 的澄清问题。“新会话”按钮可清空上下文。
+页面的下拉框可选择仅导航、自动执行、显式 RAG 或显式 Info，并显示委派状态和子 Agent
+返回摘要。
 
 也可以生成一个独立测试页：
 

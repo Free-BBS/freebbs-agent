@@ -24,6 +24,7 @@ def build_navigation_test_page(api_base_url: str = "") -> str:
     p {{ color:var(--muted); }}
     form {{ display:flex; gap:10px; padding:10px; background:var(--card); border:1px solid var(--line); border-radius:14px; }}
     input {{ flex:1; min-width:0; border:0; outline:0; padding:12px; font:inherit; font-size:16px; }}
+    select {{ border:1px solid var(--line); border-radius:9px; padding:0 10px; background:white; font:inherit; }}
     button {{ border:0; border-radius:9px; padding:0 22px; color:white; background:var(--green); font-weight:700; cursor:pointer; }}
     button:disabled {{ opacity:.55; cursor:wait; }}
     .toolbar {{ display:flex; align-items:center; justify-content:space-between; gap:12px; }}
@@ -36,6 +37,8 @@ def build_navigation_test_page(api_base_url: str = "") -> str:
     .assistant {{ align-self:flex-start; background:var(--card); border:1px solid var(--line); border-bottom-left-radius:4px; }}
     #status {{ min-height:24px; color:var(--muted); }}
     #routes {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; }}
+    #subagent {{ margin:14px 0; padding:16px; background:var(--card); border:1px solid var(--line); border-radius:12px; }}
+    #subagent:empty {{ display:none; }}
     .route {{ display:block; padding:18px; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:12px; text-decoration:none; }}
     .route:hover {{ border-color:var(--green); transform:translateY(-2px); }}
     .route strong {{ color:var(--green); }}
@@ -50,13 +53,19 @@ def build_navigation_test_page(api_base_url: str = "") -> str:
   <header>
     <h1>你想去哪里学习？</h1>
     <div class="toolbar">
-      <p>支持连续追问；导引 Agent 会结合本轮会话推荐 1–3 个 FREE-BBS 入口。</p>
+      <p>支持连续追问，并可让导引 Agent 自动或显式调用 RAG / Info 子 Agent。</p>
       <button id="reset" class="reset" type="button">新会话</button>
     </div>
   </header>
   <section id="conversation" aria-live="polite"></section>
   <form id="form">
     <input id="message" aria-label="需求" value="我想找信号与系统的课程资料" required>
+    <select id="execute-subagent" aria-label="子 Agent 执行方式">
+      <option value="auto" selected>自动执行子 Agent</option>
+      <option value="none">仅导航</option>
+      <option value="rag">调用 RAG</option>
+      <option value="info">调用 Info</option>
+    </select>
     <button type="submit">帮我导引</button>
   </form>
   <div class="examples">
@@ -66,6 +75,7 @@ def build_navigation_test_page(api_base_url: str = "") -> str:
     <button data-example="帮我看看自己的学习进度和薄弱点">学习印记</button>
   </div>
   <p id="status">等待输入。</p>
+  <section id="subagent" aria-live="polite"></section>
   <section id="routes" aria-live="polite"></section>
   <details><summary>查看原始响应</summary><pre id="raw"></pre></details>
 </main>
@@ -74,10 +84,12 @@ def build_navigation_test_page(api_base_url: str = "") -> str:
   const history = [];
   const form = document.getElementById("form");
   const message = document.getElementById("message");
+  const executeSubagent = document.getElementById("execute-subagent");
   const submit = form.querySelector('button[type="submit"]');
   const reset = document.getElementById("reset");
   const conversation = document.getElementById("conversation");
   const status = document.getElementById("status");
+  const subagent = document.getElementById("subagent");
   const routes = document.getElementById("routes");
   const raw = document.getElementById("raw");
 
@@ -89,19 +101,39 @@ def build_navigation_test_page(api_base_url: str = "") -> str:
     message.value = "";
     submit.disabled = true;
     status.textContent = "正在判断意图…";
+    subagent.replaceChildren();
     routes.replaceChildren();
     try {{
       const response = await fetch(endpoint, {{
         method: "POST",
         headers: {{"Content-Type":"application/json"}},
-        body: JSON.stringify({{agent:"navigation", messages:history, stream:false}})
+        body: JSON.stringify({{
+          agent:"navigation",
+          messages:history,
+          stream:false,
+          execute_subagent:executeSubagent.value
+        }})
       }});
       const data = await response.json();
       if (!response.ok) throw new Error(data.error?.message || `HTTP ${{response.status}}`);
       history.push({{role:"assistant", content:data.answer}});
       addBubble("assistant", data.answer);
-      const engine = data.llm_used ? `LLM：${{data.model}}` : `规则降级：${{data.llm_status}}`;
-      status.textContent = `${{data.answer}}（置信度 ${{Math.round(data.confidence * 100)}}%，${{engine}}）`;
+      const engine = data.llm_used ? `LLM：${{data.model}}` : `规则路由：${{data.llm_status}}`;
+      const delegated = data.delegation?.executed
+        ? `，已调用 ${{data.delegation.selected.toUpperCase()}}`
+        : `，未调用子 Agent`;
+      status.textContent = `${{data.answer}}（置信度 ${{Math.round(data.confidence * 100)}}%，${{engine}}${{delegated}}）`;
+      if (data.delegation) {{
+        const heading = document.createElement("strong");
+        heading.textContent = data.delegation.executed
+          ? `子 Agent：${{data.delegation.selected.toUpperCase()}}`
+          : `子 Agent：未执行（选择结果 ${{data.delegation.selected}}）`;
+        const detail = document.createElement("p");
+        detail.textContent = data.subagent
+          ? `状态：${{data.subagent.status || data.delegation.status || "completed"}}；${{data.subagent.answer || ""}}`
+          : "仅返回导航结果。Info 调用的可信身份必须由后端请求头注入，本页不会收集 Token 或用户身份。";
+        subagent.append(heading, detail);
+      }}
       for (const item of data.routes) {{
         const link = document.createElement("a");
         link.className = "route";
@@ -135,6 +167,7 @@ def build_navigation_test_page(api_base_url: str = "") -> str:
     history.length = 0;
     conversation.replaceChildren();
     routes.replaceChildren();
+    subagent.replaceChildren();
     raw.textContent = "";
     status.textContent = "已开始新会话。";
     message.value = "";
