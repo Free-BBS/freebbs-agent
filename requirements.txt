@@ -4,3 +4,5 @@ openai>=1.0,<3
 faiss-cpu>=1.8,<2
 numpy>=1.26,<3
 pypdf>=5.0,<6
+sentence-transformers>=3.0,<4
+torch>=2.2,<3

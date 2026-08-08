@@ -16,10 +16,9 @@ if [[ ! -x "$VENV_PYTHON" ]]; then
   exit 1
 fi
 
-if ! RAG_INDEX_PATH="${RAG_INDEX_PATH:-$DEFAULT_INDEX_PATH}" \
-  RAG_METADATA_PATH="${RAG_METADATA_PATH:-$DEFAULT_METADATA_PATH}" \
-  "$VENV_PYTHON" -m freebbs_agent.rag.preflight; then
-  echo "Run: $VENV_PYTHON scripts/build_rag_index.py" >&2
+if [[ ! -f "$PROJECT_ROOT/$DEFAULT_INDEX_PATH" || ! -f "$PROJECT_ROOT/$DEFAULT_METADATA_PATH" ]]; then
+  echo "Missing RAG index or metadata."
+  echo "Run: $VENV_PYTHON scripts/build_rag_index.py"
   exit 1
 fi
 

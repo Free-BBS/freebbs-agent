@@ -60,6 +60,35 @@ class AppTest(unittest.TestCase):
         response = self.client.get("/dev/agent-test", environ_base={"REMOTE_ADDR": "127.0.0.1"})
         self.assertEqual(response.status_code, 200)
         self.assertIn("Agent Test", response.get_data(as_text=True))
+        self.assertIn("new URLSearchParams", response.get_data(as_text=True))
+
+        scenario_pages = {
+            "/dev/general-test?agent=general": "General Agent 测试",
+            "/dev/rag-test?agent=rag": "RAG Agent 测试",
+            "/dev/comment-test?agent=comment": "Comment Agent 测试",
+            "/dev/course-graph-test?agent=general": "课程图谱场景测试",
+            "/dev/project-test?agent=general": "PBL 项目场景测试",
+            "/dev/learning-profile-test?agent=general": "学习印记场景测试",
+        }
+        for path, heading in scenario_pages.items():
+            scenario_page = self.client.get(path, environ_base={"REMOTE_ADDR": "127.0.0.1"})
+            self.assertEqual(scenario_page.status_code, 200)
+            page_html = scenario_page.get_data(as_text=True)
+            self.assertIn(heading, page_html)
+            self.assertNotIn("placeholder=\"general_chat / comment_mention\"", page_html)
+
+        info_page = self.client.get(
+            "/dev/info-test", environ_base={"REMOTE_ADDR": "127.0.0.1"}
+        )
+        self.assertEqual(info_page.status_code, 200)
+        self.assertIn("http://127.0.0.1:4310", info_page.get_data(as_text=True))
+
+        navigation_page = self.client.get(
+            "/dev/navigation-test", environ_base={"REMOTE_ADDR": "127.0.0.1"}
+        )
+        self.assertEqual(navigation_page.status_code, 200)
+        self.assertIn("execute_subagent", navigation_page.get_data(as_text=True))
+        self.assertIn("自动执行子 Agent", navigation_page.get_data(as_text=True))
 
     def test_chat_accepts_message(self):
         response = self.client.post(
@@ -162,6 +191,19 @@ class AppTest(unittest.TestCase):
         response = self.client.post(
             "/api/v1/chat",
             json={"message": "hello", "agent": "missing_agent"},
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"]["code"], "bad_request")
+
+    def test_navigation_rejects_invalid_subagent_mode(self):
+        response = self.client.post(
+            "/api/v1/chat",
+            json={
+                "message": "帮我找资料",
+                "agent": "navigation",
+                "execute_subagent": "invalid",
+            },
             environ_base={"REMOTE_ADDR": "127.0.0.1"},
         )
         self.assertEqual(response.status_code, 400)

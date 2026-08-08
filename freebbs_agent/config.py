@@ -132,12 +132,6 @@ class AgentConfig:
     port: int
     request_timeout_seconds: float
     system_prompt: str
-    course_materials_root: str = ""
-    settings_socket_path: str | None = None
-    agent_service_token: str | None = field(default=None, repr=False)
-    settings_timeout_seconds: float = 2.0
-    settings_cache_ttl_seconds: float = 30.0
-    settings_stale_ttl_seconds: float = 300.0
     rag_enabled: bool = False
     rag_index_path: str = "data/rag/index.faiss"
     rag_metadata_path: str = "data/rag/metadata.jsonl"
@@ -152,18 +146,16 @@ class AgentConfig:
     rag_embedding_api_key: str | None = None
     rag_embedding_base_url: str | None = None
     rag_embedding_model: str = "text-embedding-3-small"
-    online_router_enabled: bool = True
-    online_router_confidence_threshold: float = 0.7
-    rag_query_augmentation_enabled: bool = True
-    rag_max_subqueries: int = 3
-
-    @property
-    def server_settings_enabled(self) -> bool:
-        return bool(self.settings_socket_path and self.agent_service_token)
-
-    @property
-    def server_settings_partially_configured(self) -> bool:
-        return bool(self.settings_socket_path) != bool(self.agent_service_token)
+    web_base_url: str = ""
+    navigation_llm_enabled: bool = True
+    navigation_model: str | None = None
+    navigation_llm_confidence_threshold: float = 0.7
+    info_agent_enabled: bool = False
+    info_agent_base_url: str = "http://127.0.0.1:4310"
+    info_agent_internal_token: str | None = None
+    info_agent_timeout_seconds: float = 30.0
+    info_agent_auto_authenticate: bool = True
+    freebbs_agent_internal_token: str | None = None
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -184,12 +176,6 @@ class AgentConfig:
             port=int(os.getenv("AGENT_PORT", "5001")),
             request_timeout_seconds=float(os.getenv("AGENT_TIMEOUT_SECONDS", "60")),
             system_prompt=system_prompt.strip() if system_prompt and system_prompt.strip() else DEFAULT_SYSTEM_PROMPT,
-            course_materials_root=os.getenv("COURSE_MATERIALS_ROOT", "").strip(),
-            settings_socket_path=settings_socket_path,
-            agent_service_token=agent_service_token,
-            settings_timeout_seconds=float(os.getenv("AGENT_SETTINGS_TIMEOUT_SECONDS", "2")),
-            settings_cache_ttl_seconds=float(os.getenv("AGENT_SETTINGS_CACHE_TTL_SECONDS", "30")),
-            settings_stale_ttl_seconds=float(os.getenv("AGENT_SETTINGS_STALE_TTL_SECONDS", "300")),
             rag_enabled=os.getenv("RAG_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
             rag_index_path=os.getenv("RAG_INDEX_PATH", "data/rag/index.faiss"),
             rag_metadata_path=os.getenv("RAG_METADATA_PATH", "data/rag/metadata.jsonl"),
@@ -204,9 +190,18 @@ class AgentConfig:
             rag_embedding_api_key=os.getenv("RAG_EMBEDDING_API_KEY"),
             rag_embedding_base_url=os.getenv("RAG_EMBEDDING_BASE_URL"),
             rag_embedding_model=os.getenv("RAG_EMBEDDING_MODEL", "text-embedding-3-small"),
-            online_router_enabled=os.getenv("ONLINE_ROUTER_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
-            online_router_confidence_threshold=float(os.getenv("ONLINE_ROUTER_CONFIDENCE_THRESHOLD", "0.7")),
-            rag_query_augmentation_enabled=os.getenv("RAG_QUERY_AUGMENTATION_ENABLED", "true").lower()
+            web_base_url=os.getenv("FREEBBS_WEB_BASE_URL", "").strip(),
+            navigation_llm_enabled=os.getenv("NAVIGATION_LLM_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
+            navigation_model=os.getenv("NAVIGATION_MODEL") or None,
+            navigation_llm_confidence_threshold=max(
+                0.0,
+                min(1.0, float(os.getenv("NAVIGATION_LLM_CONFIDENCE_THRESHOLD", "0.7"))),
+            ),
+            info_agent_enabled=os.getenv("INFO_AGENT_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
+            info_agent_base_url=os.getenv("INFO_AGENT_BASE_URL", "http://127.0.0.1:4310").rstrip("/"),
+            info_agent_internal_token=os.getenv("INFO_AGENT_INTERNAL_TOKEN") or None,
+            info_agent_timeout_seconds=float(os.getenv("INFO_AGENT_TIMEOUT_SECONDS", "30")),
+            info_agent_auto_authenticate=os.getenv("INFO_AGENT_AUTO_AUTHENTICATE", "true").lower()
             in {"1", "true", "yes", "on"},
-            rag_max_subqueries=int(os.getenv("RAG_MAX_SUBQUERIES", "3")),
+            freebbs_agent_internal_token=os.getenv("FREEBBS_AGENT_INTERNAL_TOKEN") or None,
         )

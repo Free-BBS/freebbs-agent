@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from .agent_utils import AgentConfig, AgentInvocation, AgentMux, Any, ChatClient, FreeBBSAgent, Iterator
-from .online_router import OnlineAgentRouter
 from .rag_agent import RagAgent
+from .navigation_agent import NavigationAgent
+from .info_agent import InfoAgentBridge, InfoAgentClient
 
 
 class GeneralChatAgent(FreeBBSAgent):
@@ -90,17 +91,32 @@ class CommentMentionAgent(FreeBBSAgent):# EXAMPLE
 #                                               #
 #################################################
 
-def create_default_mux(config: AgentConfig, chat_client: ChatClient) -> AgentMux:
+def create_default_mux(
+    config: AgentConfig,
+    chat_client: ChatClient,
+    info_client: InfoAgentClient | None = None,
+) -> AgentMux:
     """Create the production mux with ordered built-in agents.
 
     Add new concrete agents here. Keep specific scene agents before
     `GeneralChatAgent`, because the general agent is the fallback.
     """
 
+    rag_agent = RagAgent(config, chat_client)
+    info_agent = InfoAgentBridge(config, chat_client, info_client)
+    navigation_agent = NavigationAgent(
+        config,
+        chat_client,
+        rag_agent=rag_agent,
+        info_agent=info_agent,
+    )
+
     return AgentMux(
         [
             CommentMentionAgent(config, chat_client),
-            RagAgent(config, chat_client),
+            rag_agent,
+            info_agent,
+            navigation_agent,
             #这里注册新的Agent
             GeneralChatAgent(config, chat_client),
         ],

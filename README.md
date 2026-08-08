@@ -6,6 +6,20 @@ FREE-BBS 的本地 Agent 服务，基于 Python Flask。
 
 - `GET /health`：服务健康检查
 - `POST /api/v1/chat`：普通 AI 问答
+- `POST /api/v1/chat`（`agent=info`）：通过标准 Tool Call 查询网络学堂课程、公告和 THU Info
+- `POST /api/v1/info/jobs/get`：代理查询 Info Sub-Agent 的认证/异步任务
+- `GET /dev/navigation-test`：导引 Agent 可视化测试页
+
+Info Sub-Agent 的配置、可信身份请求头、调用示例和登录任务处理见
+[docs/info-agent-integration.md](docs/info-agent-integration.md)。
+
+主页现有 JSON 格式保持兼容；Info 查询只需使用：
+
+```json
+{"agent": "info", "message": "查询信号与系统最新公告"}
+```
+
+UID、学号和权限不放入该 JSON，必须由 FreeBBS 后端通过文档规定的受保护请求头注入。
 
 服务默认只监听 `127.0.0.1:5001`，并且会拒绝非 loopback 来源的请求。
 
@@ -97,7 +111,7 @@ data: {"done":true}
 
 可选路由参数：
 
-- `agent`：指定 agent。当前支持 `general_chat` / `general` / `chat`、`comment_mention` / `comment` / `comment_at_max`、`rag` / `rag_agent`
+- `agent`：指定 agent。当前支持 `general_chat` / `general` / `chat`、`comment_mention` / `comment` / `comment_at_max`、`rag` / `rag_agent`、`navigation` / `guide` / `navigator` / `intent_router`
 - `source` 或 `channel`：请求来源。当前 `source: "comment"` 且消息包含 `@max` 时，会自动路由到评论区 agent
 
 后端内部会通过 mux 选择 agent。每个 agent 继承统一的 `FreeBBSAgent` 基类，核心入口是 `run(invocation)` 和 `stream(invocation)`；agent 内部可以多次调用 `call_llm(...)` 或执行其它操作。
@@ -120,7 +134,6 @@ data: {"done":true}
 - `AGENT_PORT`：监听端口，默认 `5001`
 - `AGENT_TIMEOUT_SECONDS`：请求模型超时时间，默认 `60`
 - `AGENT_SYSTEM_PROMPT`：默认系统提示词。请求传 `system` 或 `messages` 时，以请求内容为准
-- `COURSE_MATERIALS_ROOT`：仅用于未启用主服务配置的本地静态模式；相对 RAG 路径会在此目录下解析
 - `RAG_ENABLED`：是否启用 RAG agent（默认 `false`）
 - `RAG_INDEX_PATH`：FAISS 索引路径（默认 `data/rag/index.faiss`）
 - `RAG_METADATA_PATH`：索引元数据路径（默认 `data/rag/metadata.jsonl`）
@@ -135,37 +148,43 @@ data: {"done":true}
 - `RAG_EMBEDDING_API_KEY`：云端 embedding API key（`provider=api` 时使用）
 - `RAG_EMBEDDING_BASE_URL`：云端 embedding base url（可选）
 - `RAG_EMBEDDING_MODEL`：云端 embedding 模型名（默认 `text-embedding-3-small`）
-- `ONLINE_ROUTER_ENABLED`：无显式 `agent` 时是否在线判断使用 RAG（默认 `true`）
-- `ONLINE_ROUTER_CONFIDENCE_THRESHOLD`：自动路由到目标 Agent 的最低置信度（默认 `0.7`）
-- `RAG_QUERY_AUGMENTATION_ENABLED`：是否结合对话改写问题并生成子查询（默认 `true`）
-- `RAG_MAX_SUBQUERIES`：一次检索最多使用的扩展子查询数量（默认 `3`）
+- `FREEBBS_WEB_BASE_URL`：导引 Agent 生成跳转链接时使用的前端地址；默认返回站内相对路径
+- `NAVIGATION_LLM_ENABLED`：是否启用导引 Agent 的 LLM 增强，默认 `true`；无 key 时自动回退
+- `NAVIGATION_MODEL`：导引 Agent 专用模型；留空时使用 `AGENT_MODEL`
+- `NAVIGATION_LLM_CONFIDENCE_THRESHOLD`：规则路由置信度达到该值时跳过 LLM，默认 `0.7`
 
-当管理员配置了 `courseMaterialsRoot` 且 `RAG_INDEX_PATH` /
-`RAG_METADATA_PATH` 为相对路径时，Agent 会在该根目录下解析这两个路径，并在根目录变化后
-重新加载索引。绝对索引路径保持原义。修改根目录不会自动建立索引，仍需先运行索引构建流程。
-索引构建脚本的相对 `--repo-dir` 也会在同一根目录下解析。
+## 导引 Agent
 
-## 主服务配置接口
+导引 Agent 使用规则召回与 LLM 理解，把用户意图映射到知识 RAG、公告通知、课程讨论区、
+课程图谱、PBL 项目和学习印记等模块，并在 `routes` 字段返回可信的白名单链接。API key
+配置在项目根目录 `.env` 的 `AGENT_API_KEY`（或部署环境的同名 Secret）；详见
+[Navigation Agent 文档](docs/navigation-agent.md)。
 
-Agent 使用 HTTP over Unix Domain Socket 请求：
-
-```text
-GET /internal/v1/agent-config
-Authorization: Bearer <AGENT_SERVICE_TOKEN>
+```bash
+curl -X POST http://127.0.0.1:5001/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"navigation","message":"最近有什么讲座通知？"}'
 ```
 
-主服务返回 `apiKey`、`baseUrl`、`model`、`courseMaterialsRoot` 和 `revision`。
-`courseMaterialsRoot` 尚未配置时可以为空，其余字段必须有效。
-API key 只保存在进程内存中，快照对象的日志表示会隐藏它。相同 `revision` 会复用模型客户端；
-管理员保存新设置、`revision` 变化后，Agent 会在缓存刷新时自动重建客户端，无需重启。
-即使服务端异常返回相同 `revision`，Agent 也会比较密钥、Base URL 和模型名的不可逆指纹，
-不会把新配置误判为旧客户端。
+可视化测试页：`http://127.0.0.1:5001/dev/navigation-test`。独立测试页生成与冒烟
+测试方式见 [Navigation Agent 文档](docs/navigation-agent.md)。
 
-读取配置采用短超时和线程安全缓存。网络超时或主服务临时 5xx 时，只会在
-`AGENT_SETTINGS_STALE_TTL_SECONDS` 限定时间内使用最近一次有效配置；401、403、配置缺失、
-响应格式错误都会清空缓存并停止模型调用。配置接口不应挂载到公开 HTTP listener，也不应由
-Nginx 代理。生产部署使用独立的 `freebbs-agent` / `freebbs-backend` 服务用户，只通过
-`freebbs-agent-config` 共享组授予 socket 访问；前端和部署用户不在该组。
+Navigation 还可以在完成意图识别后执行一个子 Agent。`execute_subagent` 支持：
+
+- `none`：仅返回导航结果（API 默认值，保持原有行为）
+- `auto`：知识检索调用 RAG，公告/通知查询调用 Info
+- `rag`：显式调用 RAG Agent
+- `info`：显式调用 Info Agent
+
+```bash
+curl -X POST http://127.0.0.1:5001/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"navigation","execute_subagent":"auto","message":"帮我检索数据结构课程资料"}'
+```
+
+编排响应保留 `intent`、`routes` 等导航字段，并增加 `delegation` 和 `subagent`；执行成功时
+顶层 `answer` 使用子 Agent 的回答，原导航文案保存在 `navigation_answer`。Info 委派仍要求
+FreeBBS 后端提供受保护身份请求头，测试页不会收集或保存内部 Token。
 
 ## 轻量 RAG（一期）
 
@@ -246,17 +265,6 @@ python scripts/build_rag_index.py \
 
 ### 调用 rag_agent
 
-启用 RAG 且索引存在时，普通请求可以省略 `agent`。服务会先在线判断是否需要平台知识，
-再把依赖对话的问题改写为独立查询，并通过多查询召回和 RRF 融合提升召回率：
-
-```bash
-curl -X POST http://127.0.0.1:5001/api/v1/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message":"课程资料里如何比较 Dijkstra 和 Floyd？"}'
-```
-
-显式传入 `agent` 仍可用于开发调试或强制路由：
-
 ```bash
 curl -X POST http://127.0.0.1:5001/api/v1/chat \
   -H "Content-Type: application/json" \
@@ -277,8 +285,6 @@ scripts/run_rag_5002.sh
 - 启用 `RAG_ENABLED=true`
 - 使用本地模型目录 `data/models/bge-small-zh-v1.5`
 - 使用索引 `data/rag/index.faiss` 与 `data/rag/metadata.jsonl`
-- 启动前按当前配置模式解析课程资料根目录并检查实际索引文件；启用主服务配置后会读取其
-  Unix Domain Socket，接口不可用或文件缺失时拒绝启动
 
 常见覆盖方式：
 
@@ -299,8 +305,6 @@ scripts/run_rag_5002.sh
 - 已准备本地模型目录：`data/models/bge-small-zh-v1.5`
 - 已构建索引文件：`data/rag/index.faiss` 与 `data/rag/metadata.jsonl`
 
-若启用了主服务配置，上述相对索引路径均以管理员设置的课程资料根目录为基准，而不是项目目录。
-
 停止服务：
 
 - 在启动脚本的终端按 `Ctrl+C`
@@ -319,9 +323,6 @@ scripts/run_rag_5002.sh
 . .venv/bin/activate
 python scripts/evaluate_rag_retrieval.py --top-k 5
 ```
-
-评估脚本与在线服务使用同一套主服务配置读取和路径解析逻辑；启用主服务配置时，会评估管理员
-所设课程资料根目录中的索引。
 
 输出包含：
 
