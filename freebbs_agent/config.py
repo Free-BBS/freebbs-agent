@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 
 
@@ -125,7 +125,7 @@ FREE BBS 的主要功能区包括：
 
 @dataclass(frozen=True)
 class AgentConfig:
-    api_key: str | None
+    api_key: str | None = field(repr=False)
     base_url: str
     model: str
     host: str
@@ -160,6 +160,13 @@ class AgentConfig:
     @classmethod
     def from_env(cls) -> "AgentConfig":
         system_prompt = os.getenv("AGENT_SYSTEM_PROMPT")
+        settings_socket_path = (os.getenv("AGENT_SETTINGS_SOCKET") or "").strip() or None
+        agent_service_token = (os.getenv("AGENT_SERVICE_TOKEN") or "").strip() or None
+
+        if bool(settings_socket_path) != bool(agent_service_token):
+            raise ValueError(
+                "AGENT_SETTINGS_SOCKET and AGENT_SERVICE_TOKEN must be configured together"
+            )
 
         return cls(
             api_key=os.getenv("AGENT_API_KEY") or os.getenv("OPENAI_API_KEY"),

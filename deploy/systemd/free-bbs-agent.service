@@ -5,12 +5,17 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/data/www/freebbs-agent
+Environment=AGENT_SETTINGS_SOCKET=/run/free-bbs/agent-config.sock
 EnvironmentFile=/etc/free-bbs/freebbs-agent.env
 ExecStart=/data/www/freebbs-agent/.venv/bin/python app.py
 Restart=always
 RestartSec=5
-User=deploy
-Group=deploy
+User=freebbs-agent
+Group=freebbs-agent-config
+SupplementaryGroups=freebbs-agent
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

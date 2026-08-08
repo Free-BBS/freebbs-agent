@@ -9,7 +9,10 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 
 echo "[ci] syntax check"
-.venv/bin/python -m compileall app.py freebbs_agent tests
+.venv/bin/python -m compileall app.py freebbs_agent scripts tests
+for script in scripts/*.sh; do
+  bash -n "$script"
+done
 
 echo "[ci] running tests"
 .venv/bin/python -m unittest discover -s tests

@@ -119,7 +119,8 @@ def create_default_mux(
             navigation_agent,
             #这里注册新的Agent
             GeneralChatAgent(config, chat_client),
-        ]
+        ],
+        online_router=OnlineAgentRouter(config, chat_client),
     )
     
 #################################################

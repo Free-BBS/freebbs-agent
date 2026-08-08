@@ -32,13 +32,27 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-设置 `.env` 或当前 shell 环境变量：
+未启动 FREE-BBS 主服务时，可以使用静态环境变量进行本地开发：
 
 ```bash
+unset AGENT_SETTINGS_SOCKET AGENT_SERVICE_TOKEN
 export AGENT_API_KEY="your-api-key"
 export AGENT_BASE_URL="https://cloud.infini-ai.com/maas/v1"
 export AGENT_MODEL="glm-5.1"
 ```
+
+生产环境不再保存大模型 API key。Agent 通过主服务创建的 Unix
+Domain Socket 获取管理员在“系统设置”中维护的配置：
+
+```bash
+export AGENT_SETTINGS_SOCKET="/run/free-bbs/agent-config.sock"
+export AGENT_SERVICE_TOKEN="replace-with-the-shared-service-token"
+```
+
+`AGENT_SETTINGS_SOCKET` 和 `AGENT_SERVICE_TOKEN` 同时存在时启用主服务配置；两者都不
+存在时继续使用上述静态环境变量，兼容独立本地开发。只配置其中一个会直接启动失败，避免
+误回退到遗留环境 key。启用主服务配置后不会回退到环境变量中的 API key，认证失败或配置
+缺失会直接停止模型调用。
 
 启动：
 
@@ -104,9 +118,18 @@ data: {"done":true}
 
 ## 环境变量
 
-- `AGENT_API_KEY`：模型服务 API key，也兼容 `OPENAI_API_KEY`
-- `AGENT_BASE_URL`：OpenAI-compatible API 地址，默认 `https://cloud.infini-ai.com/maas/v1`
-- `AGENT_MODEL`：模型名，默认 `glm-5.1`
+- `AGENT_SETTINGS_SOCKET`：主服务配置接口的 Unix Domain Socket。生产环境使用
+  `/run/free-bbs/agent-config.sock`
+- `AGENT_SERVICE_TOKEN`：Agent 与主服务共享的服务认证 token。只放在服务环境文件中，
+  不要提交到仓库
+- `AGENT_SETTINGS_TIMEOUT_SECONDS`：读取同机配置的超时，默认 `2`
+- `AGENT_SETTINGS_CACHE_TTL_SECONDS`：成功配置的正常缓存时间，默认 `30`
+- `AGENT_SETTINGS_STALE_TTL_SECONDS`：主服务瞬时不可用时，最近一次有效配置最多可继续使用的时间，
+  默认 `300`
+- `AGENT_API_KEY`：仅用于未启用主服务配置的本地开发，也兼容 `OPENAI_API_KEY`
+- `AGENT_BASE_URL`：本地静态模式的 OpenAI-compatible API 地址，默认
+  `https://cloud.infini-ai.com/maas/v1`
+- `AGENT_MODEL`：本地静态模式的模型名，默认 `glm-5.1`
 - `AGENT_HOST`：监听地址，默认 `127.0.0.1`
 - `AGENT_PORT`：监听端口，默认 `5001`
 - `AGENT_TIMEOUT_SECONDS`：请求模型超时时间，默认 `60`

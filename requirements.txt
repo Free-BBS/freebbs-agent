@@ -1,4 +1,5 @@
 Flask>=3.0,<4
+httpx>=0.27,<1
 openai>=1.0,<3
 faiss-cpu>=1.8,<2
 numpy>=1.26,<3
