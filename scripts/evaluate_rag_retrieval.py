@@ -14,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from freebbs_agent.config import AgentConfig
 from freebbs_agent.rag.embeddings import build_embedding_client
 from freebbs_agent.rag.faiss_store import FaissVectorStore
+from freebbs_agent.rag.paths import resolve_configured_rag_store_paths
 
 
 @dataclass(frozen=True)
@@ -100,7 +101,8 @@ def main() -> None:
     config = AgentConfig.from_env()
     cases = load_cases(args.query_set)
     embedder = build_embedding_client(config)
-    store = FaissVectorStore.load(config.rag_index_path, config.rag_metadata_path)
+    index_path, metadata_path = resolve_configured_rag_store_paths(config)
+    store = FaissVectorStore.load(index_path, metadata_path)
 
     hit_at_k = 0
     mrr_total = 0.0
@@ -108,7 +110,8 @@ def main() -> None:
     print("RAG retrieval evaluation (dataset-aligned):")
     print(f"- cases: {len(cases)}")
     print(f"- top_k: {args.top_k}")
-    print(f"- index: {config.rag_index_path}")
+    print(f"- index: {Path(index_path).resolve()}")
+    print(f"- metadata: {Path(metadata_path).resolve()}")
     print()
 
     for case_idx, case in enumerate(cases, start=1):

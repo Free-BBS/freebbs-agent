@@ -14,6 +14,11 @@ from freebbs_agent.rag.chunking import chunk_documents
 from freebbs_agent.rag.embeddings import build_embedding_client
 from freebbs_agent.rag.faiss_store import FaissVectorStore
 from freebbs_agent.rag.ingest import clone_or_update_repo, load_documents_from_directory
+from freebbs_agent.rag.paths import (
+    course_materials_root_for_config,
+    resolve_rag_store_paths,
+    resolve_under_course_root,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,8 +41,15 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     config = AgentConfig.from_env()
+    course_materials_root = course_materials_root_for_config(config)
 
-    source_dir = clone_or_update_repo(args.repo_url, args.repo_dir)
+    repo_dir = resolve_under_course_root(args.repo_dir, course_materials_root)
+    index_path, metadata_path = resolve_rag_store_paths(
+        config.rag_index_path,
+        config.rag_metadata_path,
+        course_materials_root,
+    )
+    source_dir = clone_or_update_repo(args.repo_url, repo_dir)
     documents = load_documents_from_directory(str(source_dir))
     chunks = chunk_documents(documents, chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap)
     if not chunks:
@@ -56,15 +68,15 @@ def main() -> None:
     ]
 
     store = FaissVectorStore.build(vectors, metadata)
-    store.save(config.rag_index_path, config.rag_metadata_path)
+    store.save(index_path, metadata_path)
 
     print("RAG index build finished:")
     print(f"- source repo: {args.repo_url}")
-    print(f"- local source: {Path(args.repo_dir).resolve()}")
+    print(f"- local source: {Path(source_dir).resolve()}")
     print(f"- docs: {len(documents)}")
     print(f"- chunks: {len(chunks)}")
-    print(f"- index: {Path(config.rag_index_path).resolve()}")
-    print(f"- metadata: {Path(config.rag_metadata_path).resolve()}")
+    print(f"- index: {Path(index_path).resolve()}")
+    print(f"- metadata: {Path(metadata_path).resolve()}")
     print(f"- embedding provider: {config.rag_embedding_provider}")
     print(f"- embedding model: {config.rag_local_embedding_model if config.rag_embedding_provider == 'local' else config.rag_embedding_model}")
 
