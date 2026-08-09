@@ -4,6 +4,7 @@ from .agent_utils import AgentConfig, AgentInvocation, AgentMux, Any, ChatClient
 from .rag_agent import RagAgent
 from .navigation_agent import NavigationAgent
 from .info_agent import InfoAgentBridge, InfoAgentClient
+from .online_router import OnlineAgentRouter
 
 
 class GeneralChatAgent(FreeBBSAgent):

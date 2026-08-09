@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import threading
+
 from .agent_utils import AgentInvocation, Any, ChatOptions, FreeBBSAgent, Iterator
 from .rag.embeddings import build_embedding_client
 from .rag.faiss_store import FaissVectorStore, RetrievedChunk
+from .rag.paths import resolve_rag_store_paths
+from .rag.query_planner import QueryPlan, QueryPlanner
 
 
 class RagAgent(FreeBBSAgent):
@@ -12,6 +16,9 @@ class RagAgent(FreeBBSAgent):
         super().__init__(config, chat_client)
         self._embedder = None
         self._store = None
+        self._store_paths = None
+        self._store_lock = threading.Lock()
+        self._planner = QueryPlanner(config, chat_client)
 
     def can_handle(self, invocation: AgentInvocation) -> bool:
         requested_agent = invocation.payload.get("agent")
@@ -21,10 +28,12 @@ class RagAgent(FreeBBSAgent):
         if not self.config.rag_enabled:
             return self._disabled_response(invocation.options)
 
-        retrieved = self._retrieve(invocation)
+        plan = self._planner.plan(invocation)
+        retrieved = self._retrieve(plan)
         messages = self._with_retrieved_context(invocation.messages, retrieved)
         result = self.call_llm(messages, invocation.options)
         result["agent"] = self.name
+        result["query_plan"] = plan.as_dict()
         result["sources"] = [
             {
                 "chunk_id": hit.chunk_id,
@@ -41,20 +50,44 @@ class RagAgent(FreeBBSAgent):
             yield self._disabled_response(invocation.options)["answer"]
             return
 
-        retrieved = self._retrieve(invocation)
+        plan = self._planner.plan(invocation)
+        retrieved = self._retrieve(plan)
         messages = self._with_retrieved_context(invocation.messages, retrieved)
         yield from self.stream_llm(messages, invocation.options)
 
-    def _retrieve(self, invocation: AgentInvocation) -> list[RetrievedChunk]:
-        if self._embedder is None:
-            self._embedder = build_embedding_client(self.config)
-        if self._store is None:
-            self._store = FaissVectorStore.load(
-                self.config.rag_index_path,
-                self.config.rag_metadata_path,
-            )
-        query_vector = self._embedder.embed_query(invocation.message)
-        return self._store.search(query_vector, top_k=self.config.rag_top_k)
+    def _retrieve(self, plan: QueryPlan) -> list[RetrievedChunk]:
+        store_paths = self._resolve_store_paths()
+
+        with self._store_lock:
+            if self._embedder is None:
+                self._embedder = build_embedding_client(self.config)
+            embedder = self._embedder
+
+            if self._store is None or self._store_paths != store_paths:
+                self._store = FaissVectorStore.load(
+                    store_paths[0],
+                    store_paths[1],
+                )
+                self._store_paths = store_paths
+            store = self._store
+
+        ranked_lists = []
+        for query in plan.queries(self.config.rag_max_subqueries):
+            query_vector = embedder.embed_query(query)
+            ranked_lists.append(store.search(query_vector, top_k=self.config.rag_top_k))
+        return _reciprocal_rank_fusion(ranked_lists, top_k=self.config.rag_top_k)
+
+    def _resolve_store_paths(self) -> tuple[str, str]:
+        root_getter = getattr(self.chat_client, "course_materials_root", None)
+        course_materials_root = (
+            root_getter() if callable(root_getter) else self.config.course_materials_root
+        )
+
+        return resolve_rag_store_paths(
+            self.config.rag_index_path,
+            self.config.rag_metadata_path,
+            course_materials_root,
+        )
 
     def _with_retrieved_context(
         self,
@@ -85,3 +118,28 @@ class RagAgent(FreeBBSAgent):
             "agent": self.name,
             "sources": [],
         }
+
+
+def _reciprocal_rank_fusion(
+    ranked_lists: list[list[RetrievedChunk]],
+    *,
+    top_k: int,
+    rank_constant: int = 60,
+) -> list[RetrievedChunk]:
+    scores: dict[str, float] = {}
+    chunks: dict[str, RetrievedChunk] = {}
+    for hits in ranked_lists:
+        for rank, hit in enumerate(hits, start=1):
+            scores[hit.chunk_id] = scores.get(hit.chunk_id, 0.0) + 1.0 / (rank_constant + rank)
+            chunks[hit.chunk_id] = hit
+    ordered = sorted(scores, key=scores.get, reverse=True)[:top_k]
+    return [
+        RetrievedChunk(
+            chunk_id=chunks[chunk_id].chunk_id,
+            doc_id=chunks[chunk_id].doc_id,
+            source=chunks[chunk_id].source,
+            text=chunks[chunk_id].text,
+            score=scores[chunk_id],
+        )
+        for chunk_id in ordered
+    ]
