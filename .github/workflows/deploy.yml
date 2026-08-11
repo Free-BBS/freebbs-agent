@@ -93,9 +93,10 @@ jobs:
             "$ARCHIVE_PATH" \
             "$DEPLOY_USER@$DEPLOY_HOST:/tmp/freebbs-agent-${GITHUB_SHA}.tar.gz"
 
-      - name: Deploy on app server
+      - name: Start deployment on app server
         run: |
           set -euo pipefail
+          STATUS_DIR="/tmp/freebbs-agent-deploy-${GITHUB_SHA}"
           ssh \
             -i ~/.ssh/id_ed25519 \
             -o BatchMode=yes \
@@ -105,14 +106,53 @@ jobs:
             -p "$DEPLOY_PORT" \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "set -euo pipefail; \
+             STATUS_DIR='$STATUS_DIR'; \
              RELEASE_DIR=/tmp/freebbs-agent-release-${GITHUB_SHA}; \
-             rm -rf \"\$RELEASE_DIR\"; \
-             mkdir -p \"\$RELEASE_DIR\"; \
+             rm -rf \"\$STATUS_DIR\" \"\$RELEASE_DIR\"; \
+             mkdir -p \"\$STATUS_DIR\" \"\$RELEASE_DIR\"; \
              tar -xzf /tmp/freebbs-agent-${GITHUB_SHA}.tar.gz -C \"\$RELEASE_DIR\"; \
-             cd \"\$RELEASE_DIR\"; \
-             DEPLOY_DIR='$DEPLOY_PATH' \
-             FREEBBS_AGENT_ENV_FILE='$ENV_FILE' \
-             AGENT_SERVICE_NAME='$SERVICE_NAME' \
-             HEALTHCHECK_URL='$HEALTHCHECK_URL' \
-             bash scripts/deploy.sh; \
-             rm -rf \"\$RELEASE_DIR\" /tmp/freebbs-agent-${GITHUB_SHA}.tar.gz"
+             nohup env \
+               DEPLOY_DIR='$DEPLOY_PATH' \
+               FREEBBS_AGENT_ENV_FILE='$ENV_FILE' \
+               AGENT_SERVICE_NAME='$SERVICE_NAME' \
+               HEALTHCHECK_URL='$HEALTHCHECK_URL' \
+               bash -c 'release_dir=\"\$1\"; status_dir=\"\$2\"; if cd \"\$release_dir\" && bash scripts/deploy.sh; then touch \"\$status_dir/success\"; rm -rf \"\$release_dir\" /tmp/freebbs-agent-${GITHUB_SHA}.tar.gz; else exit_code=\$?; printf \"%s\\n\" \"\$exit_code\" > \"\$status_dir/failed\"; fi' \
+               bash \"\$RELEASE_DIR\" \"\$STATUS_DIR\" \
+               > \"\$STATUS_DIR/deploy.log\" 2>&1 < /dev/null & \
+             echo \$! > \"\$STATUS_DIR/pid\""
+
+      - name: Wait for deployment result
+        run: |
+          set -euo pipefail
+          STATUS_DIR="/tmp/freebbs-agent-deploy-${GITHUB_SHA}"
+          for attempt in $(seq 1 120); do
+            result="$(ssh \
+              -i ~/.ssh/id_ed25519 \
+              -o BatchMode=yes \
+              -o IdentitiesOnly=yes \
+              -o ConnectTimeout=15 \
+              -o ServerAliveInterval=30 \
+              -o ServerAliveCountMax=10 \
+              -p "$DEPLOY_PORT" \
+              "$DEPLOY_USER@$DEPLOY_HOST" \
+              "if [ -f '$STATUS_DIR/success' ]; then echo success; elif [ -f '$STATUS_DIR/failed' ]; then echo failed; elif [ -f '$STATUS_DIR/pid' ] && kill -0 \"\$(cat '$STATUS_DIR/pid')\" 2>/dev/null; then echo running; else echo lost; fi" \
+              || echo unreachable)"
+            case "$result" in
+              success)
+                echo "[deploy] completed successfully"
+                exit 0
+                ;;
+              failed|lost)
+                echo "[deploy] failed with state: $result" >&2
+                ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -p "$DEPLOY_PORT" \
+                  "$DEPLOY_USER@$DEPLOY_HOST" "cat '$STATUS_DIR/deploy.log'" || true
+                exit 1
+                ;;
+              *)
+                echo "[deploy] still running (attempt $attempt/120)"
+                sleep 15
+                ;;
+            esac
+          done
+          echo "[deploy] timed out waiting for the app server" >&2
+          exit 1
