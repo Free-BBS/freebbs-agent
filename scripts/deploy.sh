@@ -25,8 +25,8 @@ echo "[deploy] creating virtual environment"
 python3 -m venv .venv
 
 echo "[deploy] installing dependencies"
-.venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install --retries 5 --timeout 60 --upgrade pip
+.venv/bin/python -m pip install --retries 5 --timeout 60 -r requirements.txt
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "[deploy] missing env file: $ENV_FILE" >&2

@@ -6,7 +6,7 @@ cd "$ROOT_DIR"
 
 echo "[ci] installing dependencies"
 python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install --retries 5 --timeout 60 -r requirements.txt
 
 echo "[ci] syntax check"
 .venv/bin/python -m compileall app.py freebbs_agent scripts tests
