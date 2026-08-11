@@ -73,6 +73,8 @@ jobs:
             -i ~/.ssh/id_ed25519 \
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=10 \
             -p "$DEPLOY_PORT" \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "echo '[deploy] ssh auth ok'"
@@ -85,6 +87,8 @@ jobs:
             -i ~/.ssh/id_ed25519 \
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=10 \
             -P "$DEPLOY_PORT" \
             "$ARCHIVE_PATH" \
             "$DEPLOY_USER@$DEPLOY_HOST:/tmp/freebbs-agent-${GITHUB_SHA}.tar.gz"
@@ -96,6 +100,8 @@ jobs:
             -i ~/.ssh/id_ed25519 \
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=10 \
             -p "$DEPLOY_PORT" \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "set -euo pipefail; \
