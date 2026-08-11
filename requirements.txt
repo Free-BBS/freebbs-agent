@@ -1,3 +1,8 @@
+# Linux deployments only need CPU inference.  Use PyTorch's CPU wheel index so
+# pip does not select the CUDA-enabled wheel and its multi-gigabyte NVIDIA
+# runtime dependencies from PyPI.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 Flask>=3.0,<4
 httpx>=0.27,<1
 openai>=1.0,<3
@@ -5,4 +10,5 @@ faiss-cpu>=1.8,<2
 numpy>=1.26,<3
 pypdf>=5.0,<6
 sentence-transformers>=3.0,<4
-torch>=2.2,<3
+torch==2.9.1+cpu ; platform_system == "Linux"
+torch>=2.2,<3 ; platform_system != "Linux"
