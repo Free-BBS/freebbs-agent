@@ -23,8 +23,36 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Validate project
+      - name: Cache deployment wheelhouse
+        uses: actions/cache@v4
+        with:
+          path: wheelhouse
+          key: freebbs-agent-wheelhouse-${{ runner.os }}-py312-${{ hashFiles('requirements.txt') }}
+
+      - name: Build deployment wheelhouse
+        run: |
+          set -euo pipefail
+          mkdir -p wheelhouse
+          if ! find wheelhouse -maxdepth 1 -type f -name '*.whl' -print -quit | grep -q .; then
+            python -m pip download \
+              --only-binary=:all: \
+              --dest wheelhouse \
+              -r requirements.txt
+          fi
+
+      - name: Validate project from wheelhouse
+        env:
+          PIP_NO_INDEX: "1"
+          PIP_FIND_LINKS: ${{ github.workspace }}/wheelhouse
         run: bash scripts/ci-validate.sh
+
+      - name: Upload deployment wheelhouse
+        uses: actions/upload-artifact@v4
+        with:
+          name: freebbs-agent-wheelhouse-${{ github.sha }}
+          path: wheelhouse
+          compression-level: 0
+          retention-days: 1
 
   deploy:
     runs-on: ubuntu-latest
@@ -41,6 +69,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download deployment wheelhouse
+        uses: actions/download-artifact@v4
+        with:
+          name: freebbs-agent-wheelhouse-${{ github.sha }}
+          path: wheelhouse
 
       - name: Package release
         run: |

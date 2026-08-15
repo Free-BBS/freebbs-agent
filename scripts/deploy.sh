@@ -17,6 +17,7 @@ rsync -a --delete \
   --exclude ".git" \
   --exclude ".venv" \
   --exclude "__pycache__" \
+  --exclude "wheelhouse" \
   "$ROOT_DIR"/ "$DEPLOY_DIR"/
 
 cd "$DEPLOY_DIR"
@@ -34,11 +35,18 @@ if [[ "$installed_hash" == "$requirements_hash" ]]; then
   echo "[deploy] dependencies unchanged; reusing virtual environment"
 else
   echo "[deploy] installing dependencies"
-  .venv/bin/python -m pip install \
-    --retries 5 \
-    --timeout 60 \
-    --prefer-binary \
-    -r requirements.txt
+  pip_install_args=(
+    --retries 5
+    --timeout 60
+    --prefer-binary
+  )
+  if compgen -G "$ROOT_DIR/wheelhouse/*.whl" >/dev/null; then
+    echo "[deploy] using bundled wheelhouse"
+    pip_install_args+=(--no-index --find-links "$ROOT_DIR/wheelhouse")
+  else
+    echo "[deploy] bundled wheelhouse not found; using configured package indexes"
+  fi
+  .venv/bin/python -m pip install "${pip_install_args[@]}" -r requirements.txt
   printf '%s\n' "$requirements_hash" > "$requirements_stamp"
 fi
 .venv/bin/python -m pip check
