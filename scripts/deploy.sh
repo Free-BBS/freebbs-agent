@@ -22,11 +22,26 @@ rsync -a --delete \
 cd "$DEPLOY_DIR"
 
 echo "[deploy] creating virtual environment"
-python3 -m venv .venv
+if [[ ! -x .venv/bin/python ]]; then
+  python3 -m venv .venv
+  .venv/bin/python -m pip install --retries 5 --timeout 60 --upgrade pip
+fi
 
-echo "[deploy] installing dependencies"
-.venv/bin/python -m pip install --retries 5 --timeout 60 --upgrade pip
-.venv/bin/python -m pip install --retries 5 --timeout 60 -r requirements.txt
+requirements_hash="$(sha256sum requirements.txt | awk '{print $1}')"
+requirements_stamp=".venv/.requirements.sha256"
+installed_hash="$(cat "$requirements_stamp" 2>/dev/null || true)"
+if [[ "$installed_hash" == "$requirements_hash" ]]; then
+  echo "[deploy] dependencies unchanged; reusing virtual environment"
+else
+  echo "[deploy] installing dependencies"
+  .venv/bin/python -m pip install \
+    --retries 5 \
+    --timeout 60 \
+    --prefer-binary \
+    -r requirements.txt
+  printf '%s\n' "$requirements_hash" > "$requirements_stamp"
+fi
+.venv/bin/python -m pip check
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "[deploy] missing env file: $ENV_FILE" >&2
