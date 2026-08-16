@@ -399,6 +399,36 @@ class NavigationAgentTest(unittest.TestCase):
         self.assertEqual(result["delegation"]["selected"], "none")
         self.assertEqual(len(rag.invocations), 0)
 
+    def test_combined_chat_keeps_course_graph_button_for_explicit_guidance(self):
+        general = FakeSubagent("general_chat")
+        agent = NavigationAgent(
+            make_config(),
+            UnusedChatClient(),
+            rag_agent=FakeSubagent("rag"),
+            info_agent=FakeSubagent("info"),
+            general_agent=general,
+        )
+        message = "请导引到微积分课程的知识图谱"
+        result = agent.run(
+            AgentInvocation(
+                payload={
+                    "agent": "navigation",
+                    "message": message,
+                    "execute_subagent": "auto",
+                    "combine_general_chat": True,
+                },
+                messages=[{"role": "user", "content": message}],
+                options=ChatOptions(),
+            )
+        )
+
+        self.assertTrue(result["navigation_requested"])
+        self.assertEqual(result["response_mode"], "navigation")
+        self.assertEqual(result["intent"], "course_graph")
+        self.assertEqual(result["routes"][0]["module"], "course_graph")
+        self.assertIn("/course", result["routes"][0]["url"])
+        self.assertEqual(result["delegation"]["selected"], "none")
+
 
 if __name__ == "__main__":
     unittest.main()
