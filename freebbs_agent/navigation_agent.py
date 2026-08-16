@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from urllib.parse import quote_plus
 
@@ -113,6 +114,30 @@ TARGETS = (
 )
 
 
+EXPLICIT_NAVIGATION_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"(?:带我|领我)(?:去|到)",
+        r"(?:打开|进入|跳转到?|导航到?|前往)(?:一下|这个|那个|对应的)?(?:页面|模块|功能|入口|知识地图|讨论区|工作台)?",
+        r"(?:页面|模块|功能|入口|知识地图|讨论区|工作台)(?:在)?哪(?:里|儿)",
+        r"怎么(?:去|进入|打开|找到)(?:页面|模块|功能|入口|知识地图|讨论区|工作台)?",
+        r"(?:我想|我要|我需要)?去(?:一下)?(?:知识地图|讨论区|工作台|项目区|个人主页)",
+        r"(?:找|寻找).*(?:项目|队友|组队|讨论区|学习记录|能力画像)",
+    )
+)
+
+KNOWLEDGE_QUESTION_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"什么是.{2,}",
+        r".{2,}是什么",
+        r"(?:解释|推导|证明|分析).{2,}",
+        r".{2,}(?:知识点|原理|公式|定理|定律)",
+        r".{2,}(?:有什么用|有何作用|怎么理解|如何理解|怎么算|如何计算)",
+    )
+)
+
+
 class NavigationAgent(FreeBBSAgent):
     """Use an LLM to guide users, with deterministic routing as a safe fallback."""
 
@@ -127,18 +152,109 @@ class NavigationAgent(FreeBBSAgent):
         *,
         rag_agent: FreeBBSAgent | None = None,
         info_agent: FreeBBSAgent | None = None,
+        general_agent: FreeBBSAgent | None = None,
     ) -> None:
         super().__init__(config, chat_client)
         self.rag_agent = rag_agent
         self.info_agent = info_agent
+        self.general_agent = general_agent
 
     def can_handle(self, invocation: AgentInvocation) -> bool:
         requested_agent = invocation.payload.get("agent")
         return requested_agent == self.name or requested_agent in self.aliases
 
     def run(self, invocation: AgentInvocation) -> dict[str, Any]:
+        if invocation.payload.get("combine_general_chat") and self.general_agent is not None:
+            return self._run_combined_chat(invocation)
         navigation_result = self._navigate(invocation)
         return self._delegate(invocation, navigation_result)
+
+    def _run_combined_chat(self, invocation: AgentInvocation) -> dict[str, Any]:
+        """Run normal chat and navigation together, then select the useful surface."""
+
+        general_invocation = self._general_invocation(invocation)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            navigation_future = executor.submit(self._navigate, invocation)
+            general_future = executor.submit(self.general_agent.run, general_invocation)
+            navigation_result = navigation_future.result()
+            try:
+                general_result = general_future.result()
+            except (AIClientError, ValueError, TypeError):
+                general_result = None
+
+        navigation_requested = self._is_explicit_navigation(invocation.message)
+        result = self._delegate(
+            invocation,
+            navigation_result,
+            navigation_requested=navigation_requested,
+        )
+        result["navigation_requested"] = navigation_requested
+
+        selected = result.get("delegation", {}).get("selected")
+        if (
+            selected == "rag"
+            and result.get("delegation", {}).get("executed")
+            and result.get("subagent", {}).get("status") != "disabled"
+        ):
+            result["navigation_routes"] = result.get("routes", [])
+            result["routes"] = []
+            result["response_mode"] = "rag"
+            return result
+
+        if selected == "info" and result.get("delegation", {}).get("executed"):
+            result["response_mode"] = "info"
+            return result
+
+        if navigation_requested and not navigation_result.get("needs_clarification"):
+            result["response_mode"] = "navigation"
+            if general_result and general_result.get("answer"):
+                result["navigation_answer"] = navigation_result["answer"]
+                result["chat_answer"] = general_result["answer"]
+                result["answer"] = general_result["answer"]
+            return result
+
+        if general_result and general_result.get("answer"):
+            navigation_snapshot = {
+                key: result.get(key)
+                for key in (
+                    "intent",
+                    "confidence",
+                    "needs_clarification",
+                    "routes",
+                    "llm_used",
+                    "llm_status",
+                )
+            }
+            result.update(
+                {
+                    "answer": general_result["answer"],
+                    "agent": "general_chat",
+                    "intent": "general_chat",
+                    "routes": [],
+                    "model": general_result.get("model", self.config.model),
+                    "finish_reason": general_result.get("finish_reason", "stop"),
+                    "response_mode": "general_chat",
+                    "navigation": navigation_snapshot,
+                }
+            )
+        return result
+
+    @staticmethod
+    def _general_invocation(invocation: AgentInvocation) -> AgentInvocation:
+        payload = dict(invocation.payload)
+        payload["agent"] = "general_chat"
+        payload.pop("execute_subagent", None)
+        payload.pop("combine_general_chat", None)
+        return AgentInvocation(
+            payload=payload,
+            messages=invocation.messages,
+            options=invocation.options,
+        )
+
+    @staticmethod
+    def _is_explicit_navigation(message: str) -> bool:
+        normalized = message.casefold().strip()
+        return any(pattern.search(normalized) for pattern in EXPLICIT_NAVIGATION_PATTERNS)
 
     def _navigate(self, invocation: AgentInvocation) -> dict[str, Any]:
         routing_query = self._routing_query(invocation)
@@ -171,6 +287,8 @@ class NavigationAgent(FreeBBSAgent):
         self,
         invocation: AgentInvocation,
         navigation_result: dict[str, Any],
+        *,
+        navigation_requested: bool = False,
     ) -> dict[str, Any]:
         """Optionally execute one routed sub-agent and retain the navigation result."""
 
@@ -184,10 +302,14 @@ class NavigationAgent(FreeBBSAgent):
 
         selected = requested
         if selected == "auto":
-            selected = {
-                "knowledge_search": "rag",
-                "announcement": "info",
-            }.get(navigation_result.get("intent"), "none")
+            selected = (
+                "none"
+                if navigation_requested
+                else {
+                    "knowledge_search": "rag",
+                    "announcement": "info",
+                }.get(navigation_result.get("intent"), "none")
+            )
 
         if navigation_result.get("needs_clarification"):
             selected = "none"
@@ -380,6 +502,10 @@ confidence 必须是 0 到 1。模糊请求可返回最多 3 个最可能入口�
         ranked = []
         for target in TARGETS:
             score = sum(weight for keyword, weight in target.keywords if keyword in normalized)
+            if target.intent == "knowledge_search" and any(
+                pattern.search(normalized) for pattern in KNOWLEDGE_QUESTION_PATTERNS
+            ):
+                score += 3
             ranked.append((score, target))
         return sorted(ranked, key=lambda item: item[0], reverse=True)
 
