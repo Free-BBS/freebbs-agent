@@ -105,11 +105,13 @@ def create_default_mux(
 
     rag_agent = RagAgent(config, chat_client)
     info_agent = InfoAgentBridge(config, chat_client, info_client)
+    general_agent = GeneralChatAgent(config, chat_client)
     navigation_agent = NavigationAgent(
         config,
         chat_client,
         rag_agent=rag_agent,
         info_agent=info_agent,
+        general_agent=general_agent,
     )
 
     return AgentMux(
@@ -119,7 +121,7 @@ def create_default_mux(
             info_agent,
             navigation_agent,
             #这里注册新的Agent
-            GeneralChatAgent(config, chat_client),
+            general_agent,
         ],
         online_router=OnlineAgentRouter(config, chat_client),
     )

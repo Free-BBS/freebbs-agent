@@ -31,6 +31,18 @@ class FakeNavigationChatClient:
         raise AssertionError("NavigationAgent must not call the LLM")
 
 
+class GeneralChatClient:
+    def chat(self, messages, **kwargs):
+        return {
+            "answer": "这是普通聊天回答",
+            "model": "general-model",
+            "finish_reason": "stop",
+        }
+
+    def stream_chat(self, *args, **kwargs):
+        raise AssertionError("combined non-streaming chat must not stream")
+
+
 class FakeSubagent:
     def __init__(self, name):
         self.name = name
@@ -191,7 +203,7 @@ class NavigationAgentTest(unittest.TestCase):
             )
         )
         self.assertFalse(result["llm_used"])
-        self.assertEqual(result["llm_status"], "missing_api_key")
+        self.assertEqual(result["llm_status"], "skipped_high_rule_confidence")
         self.assertEqual(result["intent"], "knowledge_search")
         self.assertFalse(result["needs_clarification"])
 
@@ -255,6 +267,171 @@ class NavigationAgentTest(unittest.TestCase):
         invocation.payload["execute_subagent"] = "bad"
         with self.assertRaises(ValueError):
             agent.run(invocation)
+
+    def test_combined_chat_uses_general_answer_for_ordinary_conversation(self):
+        rag = FakeSubagent("rag")
+        info = FakeSubagent("info")
+        general = FakeSubagent("general_chat")
+        agent = NavigationAgent(
+            make_config(),
+            UnusedChatClient(),
+            rag_agent=rag,
+            info_agent=info,
+            general_agent=general,
+        )
+        result = agent.run(
+            AgentInvocation(
+                payload={
+                    "agent": "navigation",
+                    "message": "你好，今天过得怎么样？",
+                    "execute_subagent": "auto",
+                    "combine_general_chat": True,
+                },
+                messages=[{"role": "user", "content": "你好，今天过得怎么样？"}],
+                options=ChatOptions(),
+            )
+        )
+        self.assertEqual(result["agent"], "general_chat")
+        self.assertEqual(result["answer"], "general_chat-answer")
+        self.assertEqual(result["response_mode"], "general_chat")
+        self.assertTrue(result["routes"])
+        self.assertEqual(result["routes"], result["navigation_routes"])
+        self.assertEqual(result["parallel_agents"]["navigation"], "completed")
+        self.assertEqual(result["parallel_agents"]["general_chat"], "completed")
+        self.assertEqual(len(general.invocations), 1)
+        self.assertEqual(len(rag.invocations), 0)
+
+    def test_default_mux_exposes_combined_chat_through_http_api(self):
+        app = create_app(make_config(), GeneralChatClient())
+        response = app.test_client().post(
+            "/api/v1/chat",
+            json={
+                "agent": "navigation",
+                "message": "你好，介绍一下你自己",
+                "execute_subagent": "auto",
+                "combine_general_chat": True,
+            },
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["agent"], "general_chat")
+        self.assertEqual(response.get_json()["answer"], "这是普通聊天回答")
+
+    def test_combined_chat_uses_rag_answer_and_keeps_navigation_routes(self):
+        rag = FakeSubagent("rag")
+        general = FakeSubagent("general_chat")
+        agent = NavigationAgent(
+            make_config(),
+            UnusedChatClient(),
+            rag_agent=rag,
+            info_agent=FakeSubagent("info"),
+            general_agent=general,
+        )
+        message = "请解释傅里叶变换这个知识点"
+        result = agent.run(
+            AgentInvocation(
+                payload={
+                    "agent": "navigation",
+                    "message": message,
+                    "execute_subagent": "auto",
+                    "combine_general_chat": True,
+                },
+                messages=[{"role": "user", "content": message}],
+                options=ChatOptions(),
+            )
+        )
+        self.assertEqual(result["answer"], "rag-answer")
+        self.assertEqual(result["response_mode"], "rag")
+        self.assertTrue(result["routes"])
+        self.assertTrue(result["navigation_routes"])
+        self.assertEqual(result["routes"], result["navigation_routes"])
+        self.assertEqual(len(rag.invocations), 1)
+        self.assertEqual(len(general.invocations), 1)
+
+    def test_combined_chat_recognizes_conceptual_follow_up_as_rag(self):
+        rag = FakeSubagent("rag")
+        agent = NavigationAgent(
+            make_config(),
+            UnusedChatClient(),
+            rag_agent=rag,
+            info_agent=FakeSubagent("info"),
+            general_agent=FakeSubagent("general_chat"),
+        )
+        message = "傅里叶变换有什么用？"
+        result = agent.run(
+            AgentInvocation(
+                payload={
+                    "agent": "navigation",
+                    "message": message,
+                    "execute_subagent": "auto",
+                    "combine_general_chat": True,
+                },
+                messages=[{"role": "user", "content": message}],
+                options=ChatOptions(),
+            )
+        )
+        self.assertEqual(result["response_mode"], "rag")
+        self.assertEqual(result["answer"], "rag-answer")
+
+    def test_combined_chat_keeps_routes_for_explicit_navigation(self):
+        rag = FakeSubagent("rag")
+        general = FakeSubagent("general_chat")
+        agent = NavigationAgent(
+            make_config(),
+            UnusedChatClient(),
+            rag_agent=rag,
+            info_agent=FakeSubagent("info"),
+            general_agent=general,
+        )
+        message = "带我去课程资料页面"
+        result = agent.run(
+            AgentInvocation(
+                payload={
+                    "agent": "navigation",
+                    "message": message,
+                    "execute_subagent": "auto",
+                    "combine_general_chat": True,
+                },
+                messages=[{"role": "user", "content": message}],
+                options=ChatOptions(),
+            )
+        )
+        self.assertTrue(result["navigation_requested"])
+        self.assertEqual(result["response_mode"], "navigation")
+        self.assertEqual(result["answer"], "general_chat-answer")
+        self.assertTrue(result["routes"])
+        self.assertEqual(result["delegation"]["selected"], "none")
+        self.assertEqual(len(rag.invocations), 0)
+
+    def test_combined_chat_keeps_course_graph_button_for_explicit_guidance(self):
+        general = FakeSubagent("general_chat")
+        agent = NavigationAgent(
+            make_config(),
+            UnusedChatClient(),
+            rag_agent=FakeSubagent("rag"),
+            info_agent=FakeSubagent("info"),
+            general_agent=general,
+        )
+        message = "请导引到微积分课程的知识图谱"
+        result = agent.run(
+            AgentInvocation(
+                payload={
+                    "agent": "navigation",
+                    "message": message,
+                    "execute_subagent": "auto",
+                    "combine_general_chat": True,
+                },
+                messages=[{"role": "user", "content": message}],
+                options=ChatOptions(),
+            )
+        )
+
+        self.assertTrue(result["navigation_requested"])
+        self.assertEqual(result["response_mode"], "navigation")
+        self.assertEqual(result["intent"], "course_graph")
+        self.assertEqual(result["routes"][0]["module"], "course_graph")
+        self.assertIn("/course", result["routes"][0]["url"])
+        self.assertEqual(result["delegation"]["selected"], "none")
 
 
 if __name__ == "__main__":

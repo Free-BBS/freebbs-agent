@@ -116,6 +116,7 @@ class RagAgent(FreeBBSAgent):
             "model": options.model or self.config.model,
             "finish_reason": "stop",
             "agent": self.name,
+            "status": "disabled",
             "sources": [],
         }
 

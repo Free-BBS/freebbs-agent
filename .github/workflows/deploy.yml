@@ -23,12 +23,41 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Validate project
+      - name: Cache deployment wheelhouse
+        uses: actions/cache@v4
+        with:
+          path: wheelhouse
+          key: freebbs-agent-wheelhouse-${{ runner.os }}-py312-${{ hashFiles('requirements.txt') }}
+
+      - name: Build deployment wheelhouse
+        run: |
+          set -euo pipefail
+          mkdir -p wheelhouse
+          if ! find wheelhouse -maxdepth 1 -type f -name '*.whl' -print -quit | grep -q .; then
+            python -m pip download \
+              --only-binary=:all: \
+              --dest wheelhouse \
+              -r requirements.txt
+          fi
+
+      - name: Validate project from wheelhouse
+        env:
+          PIP_NO_INDEX: "1"
+          PIP_FIND_LINKS: ${{ github.workspace }}/wheelhouse
         run: bash scripts/ci-validate.sh
+
+      - name: Upload deployment wheelhouse
+        uses: actions/upload-artifact@v4
+        with:
+          name: freebbs-agent-wheelhouse-${{ github.sha }}
+          path: wheelhouse
+          compression-level: 0
+          retention-days: 1
 
   deploy:
     runs-on: ubuntu-latest
     needs: validate
+    timeout-minutes: 55
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
       DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
@@ -40,6 +69,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download deployment wheelhouse
+        uses: actions/download-artifact@v4
+        with:
+          name: freebbs-agent-wheelhouse-${{ github.sha }}
+          path: wheelhouse
 
       - name: Package release
         run: |
@@ -111,12 +146,12 @@ jobs:
              rm -rf \"\$STATUS_DIR\" \"\$RELEASE_DIR\"; \
              mkdir -p \"\$STATUS_DIR\" \"\$RELEASE_DIR\"; \
              tar -xzf /tmp/freebbs-agent-${GITHUB_SHA}.tar.gz -C \"\$RELEASE_DIR\"; \
-             nohup env \
+             nohup setsid env \
                DEPLOY_DIR='$DEPLOY_PATH' \
                FREEBBS_AGENT_ENV_FILE='$ENV_FILE' \
                AGENT_SERVICE_NAME='$SERVICE_NAME' \
                HEALTHCHECK_URL='$HEALTHCHECK_URL' \
-               bash -c 'release_dir=\"\$1\"; status_dir=\"\$2\"; if cd \"\$release_dir\" && bash scripts/deploy.sh; then touch \"\$status_dir/success\"; rm -rf \"\$release_dir\" /tmp/freebbs-agent-${GITHUB_SHA}.tar.gz; else exit_code=\$?; printf \"%s\\n\" \"\$exit_code\" > \"\$status_dir/failed\"; fi' \
+               bash -c 'release_dir=\"\$1\"; status_dir=\"\$2\"; if cd \"\$release_dir\" && flock -w 300 /tmp/freebbs-agent-deploy.lock timeout --signal=TERM --kill-after=30s 40m bash scripts/deploy.sh; then touch \"\$status_dir/success\"; rm -rf \"\$release_dir\" /tmp/freebbs-agent-${GITHUB_SHA}.tar.gz; else exit_code=\$?; printf \"%s\\n\" \"\$exit_code\" > \"\$status_dir/failed\"; fi' \
                bash \"\$RELEASE_DIR\" \"\$STATUS_DIR\" \
                > \"\$STATUS_DIR/deploy.log\" 2>&1 < /dev/null & \
              echo \$! > \"\$STATUS_DIR/pid\""
@@ -125,7 +160,15 @@ jobs:
         run: |
           set -euo pipefail
           STATUS_DIR="/tmp/freebbs-agent-deploy-${GITHUB_SHA}"
-          for attempt in $(seq 1 120); do
+          stop_remote_deploy() {
+            ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -p "$DEPLOY_PORT" \
+              "$DEPLOY_USER@$DEPLOY_HOST" \
+              "pid=\$(cat '$STATUS_DIR/pid' 2>/dev/null || true); case \"\$pid\" in ''|*[!0-9]*) ;; *) kill -- -\"\$pid\" 2>/dev/null || true ;; esac" \
+              || true
+          }
+          trap stop_remote_deploy INT TERM
+          unreachable_count=0
+          for attempt in $(seq 1 190); do
             result="$(ssh \
               -i ~/.ssh/id_ed25519 \
               -o BatchMode=yes \
@@ -135,24 +178,46 @@ jobs:
               -o ServerAliveCountMax=10 \
               -p "$DEPLOY_PORT" \
               "$DEPLOY_USER@$DEPLOY_HOST" \
-              "if [ -f '$STATUS_DIR/success' ]; then echo success; elif [ -f '$STATUS_DIR/failed' ]; then echo failed; elif [ -f '$STATUS_DIR/pid' ] && kill -0 \"\$(cat '$STATUS_DIR/pid')\" 2>/dev/null; then echo running; else echo lost; fi" \
+              "if [ -f '$STATUS_DIR/success' ]; then echo success; elif [ -f '$STATUS_DIR/failed' ]; then echo failed; elif [ -f '$STATUS_DIR/pid' ] && kill -0 \"\$(cat '$STATUS_DIR/pid')\" 2>/dev/null && ! ps -o stat= -p \"\$(cat '$STATUS_DIR/pid')\" | grep -q '^Z'; then echo running; else echo lost; fi" \
               || echo unreachable)"
             case "$result" in
               success)
                 echo "[deploy] completed successfully"
+                ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -p "$DEPLOY_PORT" \
+                  "$DEPLOY_USER@$DEPLOY_HOST" "tail -n 40 '$STATUS_DIR/deploy.log'" || true
                 exit 0
                 ;;
               failed|lost)
                 echo "[deploy] failed with state: $result" >&2
                 ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -p "$DEPLOY_PORT" \
-                  "$DEPLOY_USER@$DEPLOY_HOST" "cat '$STATUS_DIR/deploy.log'" || true
+                  "$DEPLOY_USER@$DEPLOY_HOST" "cat '$STATUS_DIR/deploy.log'; if [ -f '$STATUS_DIR/failed' ]; then echo '[deploy] remote exit code:' \"\$(cat '$STATUS_DIR/failed')\"; fi" || true
                 exit 1
                 ;;
-              *)
-                echo "[deploy] still running (attempt $attempt/120)"
+              unreachable)
+                unreachable_count=$((unreachable_count + 1))
+                echo "[deploy] app server unreachable (attempt $attempt/190, consecutive failures $unreachable_count/3)" >&2
+                if [[ "$unreachable_count" -ge 3 ]]; then
+                  exit 1
+                fi
                 sleep 15
+                ;;
+              running)
+                unreachable_count=0
+                echo "[deploy] still running (attempt $attempt/190)"
+                if (( attempt == 1 || attempt % 4 == 0 )); then
+                  ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -p "$DEPLOY_PORT" \
+                    "$DEPLOY_USER@$DEPLOY_HOST" "tail -n 20 '$STATUS_DIR/deploy.log'" || true
+                fi
+                sleep 15
+                ;;
+              *)
+                echo "[deploy] unexpected remote state: $result" >&2
+                exit 1
                 ;;
             esac
           done
-          echo "[deploy] timed out waiting for the app server" >&2
+          echo "[deploy] timed out waiting for deployment" >&2
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" "cat '$STATUS_DIR/deploy.log'" || true
+          stop_remote_deploy
           exit 1
