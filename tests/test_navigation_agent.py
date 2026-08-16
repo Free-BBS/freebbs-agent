@@ -294,7 +294,10 @@ class NavigationAgentTest(unittest.TestCase):
         self.assertEqual(result["agent"], "general_chat")
         self.assertEqual(result["answer"], "general_chat-answer")
         self.assertEqual(result["response_mode"], "general_chat")
-        self.assertEqual(result["routes"], [])
+        self.assertTrue(result["routes"])
+        self.assertEqual(result["routes"], result["navigation_routes"])
+        self.assertEqual(result["parallel_agents"]["navigation"], "completed")
+        self.assertEqual(result["parallel_agents"]["general_chat"], "completed")
         self.assertEqual(len(general.invocations), 1)
         self.assertEqual(len(rag.invocations), 0)
 
@@ -314,7 +317,7 @@ class NavigationAgentTest(unittest.TestCase):
         self.assertEqual(response.get_json()["agent"], "general_chat")
         self.assertEqual(response.get_json()["answer"], "这是普通聊天回答")
 
-    def test_combined_chat_uses_rag_answer_without_navigation_route(self):
+    def test_combined_chat_uses_rag_answer_and_keeps_navigation_routes(self):
         rag = FakeSubagent("rag")
         general = FakeSubagent("general_chat")
         agent = NavigationAgent(
@@ -339,8 +342,9 @@ class NavigationAgentTest(unittest.TestCase):
         )
         self.assertEqual(result["answer"], "rag-answer")
         self.assertEqual(result["response_mode"], "rag")
-        self.assertEqual(result["routes"], [])
+        self.assertTrue(result["routes"])
         self.assertTrue(result["navigation_routes"])
+        self.assertEqual(result["routes"], result["navigation_routes"])
         self.assertEqual(len(rag.invocations), 1)
         self.assertEqual(len(general.invocations), 1)
 

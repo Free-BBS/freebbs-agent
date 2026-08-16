@@ -171,7 +171,7 @@ class NavigationAgent(FreeBBSAgent):
         return self._delegate(invocation, navigation_result)
 
     def _run_combined_chat(self, invocation: AgentInvocation) -> dict[str, Any]:
-        """Run normal chat and navigation together, then select the useful surface."""
+        """Run chat and navigation together and always expose both surfaces."""
 
         general_invocation = self._general_invocation(invocation)
         with ThreadPoolExecutor(max_workers=2) as executor:
@@ -190,6 +190,12 @@ class NavigationAgent(FreeBBSAgent):
             navigation_requested=navigation_requested,
         )
         result["navigation_requested"] = navigation_requested
+        result["navigation_answer"] = navigation_result["answer"]
+        result["navigation_routes"] = list(navigation_result.get("routes", []))
+        result["parallel_agents"] = {
+            "navigation": "completed",
+            "general_chat": "completed" if general_result else "failed",
+        }
 
         selected = result.get("delegation", {}).get("selected")
         if (
@@ -197,9 +203,9 @@ class NavigationAgent(FreeBBSAgent):
             and result.get("delegation", {}).get("executed")
             and result.get("subagent", {}).get("status") != "disabled"
         ):
-            result["navigation_routes"] = result.get("routes", [])
-            result["routes"] = []
             result["response_mode"] = "rag"
+            if general_result and general_result.get("answer"):
+                result["chat_answer"] = general_result["answer"]
             return result
 
         if selected == "info" and result.get("delegation", {}).get("executed"):
@@ -229,9 +235,9 @@ class NavigationAgent(FreeBBSAgent):
             result.update(
                 {
                     "answer": general_result["answer"],
+                    "chat_answer": general_result["answer"],
                     "agent": "general_chat",
                     "intent": "general_chat",
-                    "routes": [],
                     "model": general_result.get("model", self.config.model),
                     "finish_reason": general_result.get("finish_reason", "stop"),
                     "response_mode": "general_chat",
