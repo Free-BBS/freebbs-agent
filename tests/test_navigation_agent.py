@@ -207,6 +207,37 @@ class NavigationAgentTest(unittest.TestCase):
         self.assertEqual(result["intent"], "knowledge_search")
         self.assertFalse(result["needs_clarification"])
 
+    def test_latest_explicit_goal_replaces_previous_navigation_goal(self):
+        result = self.agent.run(
+            AgentInvocation(
+                payload={"agent": "navigation"},
+                messages=[
+                    {"role": "user", "content": "我想找课程资料和讲义"},
+                    {"role": "assistant", "content": "可以前往知识库。"},
+                    {"role": "user", "content": "现在我想找一个项目和队友"},
+                ],
+                options=ChatOptions(),
+            )
+        )
+        self.assertEqual(result["intent"], "project")
+        self.assertEqual(result["routes"][0]["module"], "pbl")
+        self.assertNotIn("knowledge_rag", {route["module"] for route in result["routes"]})
+
+    def test_ambiguous_follow_up_keeps_previous_navigation_goal(self):
+        result = self.agent.run(
+            AgentInvocation(
+                payload={"agent": "navigation"},
+                messages=[
+                    {"role": "user", "content": "我想去讨论区请教同学"},
+                    {"role": "assistant", "content": "可以前往课程讨论区。"},
+                    {"role": "user", "content": "就去那里看看吧"},
+                ],
+                options=ChatOptions(),
+            )
+        )
+        self.assertEqual(result["intent"], "course_discussion")
+        self.assertEqual(result["routes"][0]["module"], "course_discussion")
+
     def test_auto_delegates_knowledge_search_to_rag(self):
         rag = FakeSubagent("rag")
         info = FakeSubagent("info")

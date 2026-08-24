@@ -403,10 +403,12 @@ class NavigationAgent(FreeBBSAgent):
 
 规则：
 1. 结合完整对话理解省略、指代和用户当前阶段，不只做关键词匹配。
-2. 信息足够时给出直接、可执行的引导；信息不足时提出最多 3 个有区分度的短问题。
-3. 不编造平台功能、课程规定或 URL，不替用户完成应独立完成的作业。
-4. 规则召回候选仅供参考：{candidate_names}，你可以纠正它。
-5. 只输出 JSON 对象，不要 Markdown。格式：
+2. 最新一轮明确提出新的板块或操作目标时，以最新一轮为准，不要继续返回已经被替代的旧入口；
+   只有最新一轮使用省略、指代或信息不足时，才借助历史消息补全意图。
+3. 信息足够时给出直接、可执行的引导；信息不足时提出最多 3 个有区分度的短问题。
+4. 不编造平台功能、课程规定或 URL，不替用户完成应独立完成的作业。
+5. 规则召回候选仅供参考：{candidate_names}，你可以纠正它。
+6. 只输出 JSON 对象，不要 Markdown。格式：
 {{"intents":["intent"],"answer":"引导语","needs_clarification":false,
 "confidence":0.0,"reason_by_intent":{{"intent":"贴合用户需求的推荐理由"}}}}
 confidence 必须是 0 到 1。模糊请求可返回最多 3 个最可能入口，并设 needs_clarification=true。"""
@@ -468,12 +470,12 @@ confidence 必须是 0 到 1。模糊请求可返回最多 3 个最可能入口�
             "finish_reason": llm_result.get("finish_reason", "stop"),
         }
 
-    @staticmethod
-    def _routing_query(invocation: AgentInvocation) -> str:
+    def _routing_query(self, invocation: AgentInvocation) -> str:
         """Keep deterministic fallback aware of the current conversation.
 
-        Earlier user turns retain the established topic while the latest turn can
-        refine it. Repeating the latest turn gives it slightly more routing weight.
+        A self-contained latest turn replaces earlier navigation goals. Conversation
+        history is only used when the latest turn cannot identify a target by itself,
+        such as an ellipsis or a pronoun-based follow-up.
         """
 
         user_turns = [
@@ -483,7 +485,24 @@ confidence 必须是 0 到 1。模糊请求可返回最多 3 个最可能入口�
         ]
         if not user_turns:
             return invocation.message
-        return "\n".join([*user_turns, user_turns[-1]])
+
+        latest_turn = user_turns[-1]
+        normalized_latest = latest_turn.casefold().strip()
+        latest_keyword_score = max(
+            (
+                sum(
+                    weight
+                    for keyword, weight in target.keywords
+                    if keyword in normalized_latest
+                )
+                for target in TARGETS
+            ),
+            default=0,
+        )
+        if latest_keyword_score >= 3:
+            return latest_turn
+
+        return "\n".join(user_turns)
 
     @staticmethod
     def _parse_llm_json(content: Any) -> dict[str, Any]:
