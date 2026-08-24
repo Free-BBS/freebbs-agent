@@ -499,7 +499,7 @@ confidence 必须是 0 到 1。模糊请求可返回最多 3 个最可能入口�
             ),
             default=0,
         )
-        if latest_keyword_score >= 3:
+        if self._is_explicit_navigation(latest_turn) or latest_keyword_score >= 3:
             return latest_turn
 
         return "\n".join(user_turns)
@@ -545,7 +545,8 @@ confidence 必须是 0 到 1。模糊请求可返回最多 3 个最可能入口�
 
         top_score = ranked[0][0]
         if top_score < 3:
-            selected = ranked[:3]
+            positive_matches = [item for item in ranked if item[0] > 0]
+            selected = positive_matches[: self.max_routes] or ranked[: self.max_routes]
         else:
             # Keep every independently strong intent instead of suppressing a valid
             # secondary request merely because another intent has more trigger words.

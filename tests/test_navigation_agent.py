@@ -223,6 +223,22 @@ class NavigationAgentTest(unittest.TestCase):
         self.assertEqual(result["routes"][0]["module"], "pbl")
         self.assertNotIn("knowledge_rag", {route["module"] for route in result["routes"]})
 
+    def test_latest_navigation_action_does_not_inherit_stronger_old_keywords(self):
+        result = self.agent.run(
+            AgentInvocation(
+                payload={"agent": "navigation"},
+                messages=[
+                    {"role": "user", "content": "我想找课程资料和讲义"},
+                    {"role": "assistant", "content": "可以前往知识库。"},
+                    {"role": "user", "content": "现在带我去开发页面"},
+                ],
+                options=ChatOptions(),
+            )
+        )
+
+        self.assertEqual(result["routes"][0]["module"], "pbl")
+        self.assertNotIn("knowledge_rag", {route["module"] for route in result["routes"]})
+
     def test_ambiguous_follow_up_keeps_previous_navigation_goal(self):
         result = self.agent.run(
             AgentInvocation(
@@ -433,6 +449,34 @@ class NavigationAgentTest(unittest.TestCase):
         self.assertTrue(result["routes"])
         self.assertEqual(result["delegation"]["selected"], "none")
         self.assertEqual(len(rag.invocations), 0)
+
+    def test_combined_chat_replaces_previous_navigation_buttons_with_latest_intent(self):
+        agent = NavigationAgent(
+            make_config(),
+            UnusedChatClient(),
+            rag_agent=FakeSubagent("rag"),
+            info_agent=FakeSubagent("info"),
+            general_agent=FakeSubagent("general_chat"),
+        )
+        result = agent.run(
+            AgentInvocation(
+                payload={
+                    "agent": "navigation",
+                    "execute_subagent": "auto",
+                    "combine_general_chat": True,
+                },
+                messages=[
+                    {"role": "user", "content": "带我去找课程资料和讲义"},
+                    {"role": "assistant", "content": "可以去知识库查找课程资料。"},
+                    {"role": "user", "content": "现在带我去找项目和队友"},
+                ],
+                options=ChatOptions(),
+            )
+        )
+
+        self.assertEqual(result["intent"], "project")
+        self.assertEqual(result["routes"][0]["module"], "pbl")
+        self.assertEqual(result["navigation_routes"], result["routes"])
 
     def test_combined_chat_keeps_course_graph_button_for_explicit_guidance(self):
         general = FakeSubagent("general_chat")
