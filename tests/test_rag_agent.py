@@ -153,6 +153,8 @@ class RagAgentTest(unittest.TestCase):
             self.assertTrue(result["sources"])
             self.assertEqual(result["answer"], "rag-answer")
             self.assertEqual(result["query_plan"]["standalone_query"], "解释频域分析")
+            self.assertEqual(result["course"]["slug"], "signals")
+            self.assertEqual(result["course"]["board"], "signal")
             self.assertEqual(len(chat_client.calls), 2)
 
     def test_relative_rag_paths_resolve_under_managed_course_root(self):

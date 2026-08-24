@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 
 from .agent_utils import AgentInvocation, Any, ChatOptions, FreeBBSAgent, Iterator
+from .course_catalog import infer_course
 from .rag.embeddings import build_embedding_client
 from .rag.faiss_store import FaissVectorStore, RetrievedChunk
 from .rag.paths import resolve_rag_store_paths
@@ -43,6 +44,18 @@ class RagAgent(FreeBBSAgent):
             }
             for hit in retrieved
         ]
+        course = infer_course(
+            [
+                plan.original_query,
+                plan.standalone_query,
+                *plan.entities,
+                *plan.keywords,
+                *(hit.text for hit in retrieved),
+            ],
+            (hit.source for hit in retrieved),
+        )
+        if course:
+            result["course"] = course
         return result
 
     def stream(self, invocation: AgentInvocation) -> Iterator[str]:

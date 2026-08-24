@@ -44,18 +44,22 @@ class GeneralChatClient:
 
 
 class FakeSubagent:
-    def __init__(self, name):
+    def __init__(self, name, *, course=None):
         self.name = name
+        self.course = course
         self.invocations = []
 
     def run(self, invocation):
         self.invocations.append(invocation)
-        return {
+        result = {
             "answer": f"{self.name}-answer",
             "agent": self.name,
             "status": "success",
             "finish_reason": "stop",
         }
+        if self.course:
+            result["course"] = self.course
+        return result
 
 
 def make_config() -> AgentConfig:
@@ -89,6 +93,40 @@ class NavigationAgentTest(unittest.TestCase):
         self.assertEqual(result["intent"], "knowledge_search")
         self.assertEqual(result["routes"][0]["module"], "knowledge_rag")
         self.assertTrue(result["routes"][0]["url"].startswith("https://bbs.example.edu/knowledge?q="))
+
+    def test_named_course_learning_routes_to_its_course_island(self):
+        result = self.invoke("我想学习信号与系统课程")
+
+        self.assertEqual(result["routes"][0]["module"], "course_graph")
+        self.assertEqual(
+            result["routes"][0]["url"],
+            "https://bbs.example.edu/course?course=signals",
+        )
+        self.assertEqual(result["course_context"]["board"], "signal")
+
+    def test_named_course_discussion_routes_to_its_board(self):
+        result = self.invoke("带我去数字电路课程讨论区")
+        discussion_route = next(
+            route for route in result["routes"] if route["module"] == "course_discussion"
+        )
+
+        self.assertEqual(
+            discussion_route["url"],
+            "https://bbs.example.edu/discussion?board=circuit",
+        )
+        self.assertEqual(discussion_route["title"], "数字电路讨论区")
+
+    def test_generic_course_and_discussion_requests_keep_general_pages(self):
+        course_result = self.invoke("带我去课程学习页面")
+        discussion_result = self.invoke("带我去讨论区")
+
+        self.assertIn("https://bbs.example.edu/course?q=", course_result["routes"][0]["url"])
+        self.assertIn(
+            "https://bbs.example.edu/discussion?q=",
+            discussion_result["routes"][0]["url"],
+        )
+        self.assertNotIn("course_context", course_result)
+        self.assertNotIn("course_context", discussion_result)
 
     def test_routes_use_prefilled_local_agent_test_pages_without_web_frontend(self):
         config = AgentConfig(**{**make_config().__dict__, "web_base_url": ""})
@@ -394,6 +432,46 @@ class NavigationAgentTest(unittest.TestCase):
         self.assertEqual(result["routes"], result["navigation_routes"])
         self.assertEqual(len(rag.invocations), 1)
         self.assertEqual(len(general.invocations), 1)
+
+    def test_rag_course_context_refines_knowledge_route_to_course_island(self):
+        rag = FakeSubagent(
+            "rag",
+            course={
+                "slug": "signals",
+                "name": "信号系统",
+                "board": "signal",
+                "confidence": 0.9,
+            },
+        )
+        agent = NavigationAgent(
+            make_config(),
+            UnusedChatClient(),
+            rag_agent=rag,
+            info_agent=FakeSubagent("info"),
+            general_agent=FakeSubagent("general_chat"),
+        )
+        result = agent.run(
+            AgentInvocation(
+                payload={
+                    "agent": "navigation",
+                    "message": "请解释傅里叶变换这个知识点",
+                    "execute_subagent": "auto",
+                    "combine_general_chat": True,
+                },
+                messages=[{"role": "user", "content": "请解释傅里叶变换这个知识点"}],
+                options=ChatOptions(),
+            )
+        )
+
+        self.assertEqual(result["response_mode"], "rag")
+        self.assertEqual(result["answer"], "rag-answer")
+        self.assertEqual(result["navigation_routes"], result["routes"])
+        self.assertEqual(
+            result["routes"][0]["url"],
+            "https://bbs.example.edu/course?course=signals",
+        )
+        self.assertEqual(result["course_context"]["slug"], "signals")
+        self.assertIn("信号系统", result["navigation_answer"])
 
     def test_combined_chat_recognizes_conceptual_follow_up_as_rag(self):
         rag = FakeSubagent("rag")

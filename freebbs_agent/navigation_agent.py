@@ -8,6 +8,7 @@ from urllib.parse import quote_plus
 
 from .agent_utils import AgentInvocation, Any, FreeBBSAgent, Iterator
 from .ai_client import AIClientError
+from .course_catalog import match_named_course
 
 
 @dataclass(frozen=True)
@@ -190,8 +191,8 @@ class NavigationAgent(FreeBBSAgent):
             navigation_requested=navigation_requested,
         )
         result["navigation_requested"] = navigation_requested
-        result["navigation_answer"] = navigation_result["answer"]
-        result["navigation_routes"] = list(navigation_result.get("routes", []))
+        result["navigation_answer"] = result.get("navigation_answer", navigation_result["answer"])
+        result["navigation_routes"] = list(result.get("routes", []))
         result["parallel_agents"] = {
             "navigation": "completed",
             "general_chat": "completed" if general_result else "failed",
@@ -341,10 +342,64 @@ class NavigationAgent(FreeBBSAgent):
             options=invocation.options,
         )
         child_result = subagent.run(child_invocation)
-        result["navigation_answer"] = navigation_result["answer"]
+        course = child_result.get("course")
+        navigation_answer = navigation_result["answer"]
+        if isinstance(course, dict):
+            result = self._specialize_course_routes(result, course, include_knowledge=True)
+            navigation_answer = result.get("answer", navigation_answer)
+        result["navigation_answer"] = navigation_answer
         result["answer"] = child_result.get("answer", navigation_result["answer"])
         result["subagent"] = child_result
         result["delegation"]["status"] = child_result.get("status", "completed")
+        return result
+
+    def _specialize_course_routes(
+        self,
+        navigation_result: dict[str, Any],
+        course: dict[str, Any] | None,
+        *,
+        include_knowledge: bool = False,
+    ) -> dict[str, Any]:
+        """Replace generic learning/discussion routes when a course is known."""
+
+        if not course or not self.config.web_base_url:
+            return navigation_result
+        slug = str(course.get("slug") or "").strip()
+        name = str(course.get("name") or "").strip()
+        board = str(course.get("board") or "").strip()
+        if not slug or not name or not board:
+            return navigation_result
+
+        routes = []
+        for route in navigation_result.get("routes", []):
+            specialized = dict(route)
+            intent = route.get("intent")
+            if intent == "course_graph" or (include_knowledge and intent == "knowledge_search"):
+                specialized.update(
+                    {
+                        "intent": "course_graph",
+                        "module": "course_graph",
+                        "title": f"{name}课程学习",
+                        "url": f"{self.config.web_base_url.rstrip('/')}/course?course={quote_plus(slug)}",
+                        "reason": f"进入{name}课程岛屿和知识地图继续学习。",
+                    }
+                )
+            elif intent == "course_discussion":
+                specialized.update(
+                    {
+                        "title": f"{name}讨论区",
+                        "url": f"{self.config.web_base_url.rstrip('/')}/discussion?board={quote_plus(board)}",
+                        "reason": f"进入{name}对应的课程讨论版。",
+                    }
+                )
+            routes.append(specialized)
+
+        result = dict(navigation_result)
+        result["routes"] = routes
+        result["course_context"] = dict(course)
+        if routes and not result.get("needs_clarification"):
+            names = "、".join(route.get("title", "") for route in routes if route.get("title"))
+            result["answer"] = f"已定位到{name}课程。建议前往：{names}。"
         return result
 
     @staticmethod
@@ -373,7 +428,7 @@ class NavigationAgent(FreeBBSAgent):
             names = "、".join(route["title"] for route in routes)
             answer = f"我判断你的需求适合前往：{names}。点击下面的入口即可继续。"
 
-        return {
+        result = {
             "answer": answer,
             "agent": self.name,
             "intent": routes[0]["intent"] if routes and not needs_clarification else "clarify",
@@ -385,6 +440,7 @@ class NavigationAgent(FreeBBSAgent):
             "llm_status": llm_status,
             "finish_reason": "stop",
         }
+        return self._specialize_course_routes(result, match_named_course(query))
 
     def _run_with_llm(
         self,
@@ -457,7 +513,7 @@ confidence 必须是 0 到 1。模糊请求可返回最多 3 个最可能入口�
         if not isinstance(answer, str) or not answer.strip():
             raise ValueError("navigation LLM did not return an answer")
 
-        return {
+        result = {
             "answer": answer.strip(),
             "agent": self.name,
             "intent": "clarify" if needs_clarification else routes[0]["intent"],
@@ -469,6 +525,7 @@ confidence 必须是 0 到 1。模糊请求可返回最多 3 个最可能入口�
             "llm_status": "used",
             "finish_reason": llm_result.get("finish_reason", "stop"),
         }
+        return self._specialize_course_routes(result, match_named_course(invocation.message))
 
     def _routing_query(self, invocation: AgentInvocation) -> str:
         """Keep deterministic fallback aware of the current conversation.
