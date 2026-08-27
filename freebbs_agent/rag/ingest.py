@@ -13,6 +13,18 @@ SUPPORTED_BINARY_SUFFIXES = {".pdf"}
 def clone_or_update_repo(repo_url: str, target_dir: str) -> Path:
     target_path = Path(target_dir)
     if (target_path / ".git").exists():
+        # Git submodules are normally checked out at a pinned commit with a
+        # detached HEAD. Pulling there fails and would also defeat the pinned
+        # revision. Use the checked-out content as-is; update only regular
+        # branch checkouts.
+        branch = subprocess.run(
+            ["git", "-C", str(target_path), "symbolic-ref", "--short", "-q", "HEAD"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if branch.returncode != 0:
+            return target_path
         subprocess.run(
             ["git", "-C", str(target_path), "pull", "--ff-only"],
             check=True,
@@ -27,7 +39,12 @@ def clone_or_update_repo(repo_url: str, target_dir: str) -> Path:
     return target_path
 
 
-def load_documents_from_directory(root_dir: str, *, min_chars: int = 20) -> list[SourceDocument]:
+def load_documents_from_directory(
+    root_dir: str,
+    *,
+    min_chars: int = 20,
+    source_prefix: str = "",
+) -> list[SourceDocument]:
     root = Path(root_dir)
     files = sorted(path for path in root.rglob("*") if path.is_file())
     documents: list[SourceDocument] = []
@@ -43,11 +60,12 @@ def load_documents_from_directory(root_dir: str, *, min_chars: int = 20) -> list
             continue
 
         rel = path.relative_to(root)
-        digest = hashlib.sha1(str(rel).encode("utf-8")).hexdigest()[:12]
+        source = f"{source_prefix.rstrip('/')}/{rel}" if source_prefix else str(rel)
+        digest = hashlib.sha1(source.encode("utf-8")).hexdigest()[:12]
         documents.append(
             SourceDocument(
                 doc_id=f"doc_{digest}",
-                source=str(rel),
+                source=source,
                 text=text,
             )
         )

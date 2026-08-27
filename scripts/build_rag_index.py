@@ -35,6 +35,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--chunk-size", type=int, default=800, help="Chunk length in characters.")
     parser.add_argument("--chunk-overlap", type=int, default=120, help="Chunk overlap in characters.")
+    parser.add_argument(
+        "--local-dir",
+        action="append",
+        default=["data/rag/source/freebbs-web-course-knowledge"],
+        help="Additional local course-material directory. May be specified more than once.",
+    )
     return parser.parse_args()
 
 
@@ -50,7 +56,20 @@ def main() -> None:
         course_materials_root,
     )
     source_dir = clone_or_update_repo(args.repo_url, repo_dir)
-    documents = load_documents_from_directory(str(source_dir))
+    documents = load_documents_from_directory(
+        str(source_dir),
+        source_prefix="thuee-hardware-contest",
+    )
+    for local_dir in args.local_dir:
+        resolved_local_dir = resolve_under_course_root(local_dir, course_materials_root)
+        if not Path(resolved_local_dir).is_dir():
+            raise FileNotFoundError(f"Local RAG source directory not found: {resolved_local_dir}")
+        documents.extend(
+            load_documents_from_directory(
+                resolved_local_dir,
+                source_prefix=Path(local_dir).name,
+            )
+        )
     chunks = chunk_documents(documents, chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap)
     if not chunks:
         raise RuntimeError("No chunks produced from source documents")
