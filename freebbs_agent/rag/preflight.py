@@ -4,11 +4,17 @@ import sys
 from pathlib import Path
 
 from ..config import AgentConfig
-from .paths import resolve_configured_rag_store_paths
+from .manifest import active_store_paths
+from .paths import (
+    resolve_configured_rag_manifest_path,
+    resolve_configured_rag_store_paths,
+)
 
 
 def validate_rag_store_files(config) -> tuple[str, str]:
-    index_path, metadata_path = resolve_configured_rag_store_paths(config)
+    fallback_paths = resolve_configured_rag_store_paths(config)
+    manifest_path = resolve_configured_rag_manifest_path(config)
+    (index_path, metadata_path), _ = active_store_paths(manifest_path, fallback_paths)
     missing = [
         path
         for path in (index_path, metadata_path)

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import threading
+import time
 
 from .agent_utils import AgentInvocation, Any, ChatOptions, FreeBBSAgent, Iterator
 from .course_catalog import infer_course
 from .rag.embeddings import build_embedding_client
 from .rag.faiss_store import FaissVectorStore, RetrievedChunk
-from .rag.paths import resolve_rag_store_paths
+from .rag.manifest import active_store_paths
+from .rag.paths import resolve_rag_manifest_path, resolve_rag_store_paths
 from .rag.query_planner import QueryPlan, QueryPlanner
 
 
@@ -18,6 +20,9 @@ class RagAgent(FreeBBSAgent):
         self._embedder = None
         self._store = None
         self._store_paths = None
+        self._store_version = None
+        self._store_descriptor = None
+        self._store_descriptor_checked_at = 0.0
         self._store_lock = threading.Lock()
         self._planner = QueryPlanner(config, chat_client)
 
@@ -69,19 +74,30 @@ class RagAgent(FreeBBSAgent):
         yield from self.stream_llm(messages, invocation.options)
 
     def _retrieve(self, plan: QueryPlan) -> list[RetrievedChunk]:
-        store_paths = self._resolve_store_paths()
+        store_paths, store_version = self._resolve_store_descriptor()
 
         with self._store_lock:
             if self._embedder is None:
                 self._embedder = build_embedding_client(self.config)
             embedder = self._embedder
 
-            if self._store is None or self._store_paths != store_paths:
-                self._store = FaissVectorStore.load(
-                    store_paths[0],
-                    store_paths[1],
-                )
-                self._store_paths = store_paths
+            if (
+                self._store is None
+                or self._store_paths != store_paths
+                or self._store_version != store_version
+            ):
+                try:
+                    candidate_store = FaissVectorStore.load(
+                        store_paths[0],
+                        store_paths[1],
+                    )
+                except (OSError, RuntimeError, ValueError):
+                    if self._store is None:
+                        raise
+                else:
+                    self._store = candidate_store
+                    self._store_paths = store_paths
+                    self._store_version = store_version
             store = self._store
 
         ranked_lists = []
@@ -101,6 +117,38 @@ class RagAgent(FreeBBSAgent):
             self.config.rag_metadata_path,
             course_materials_root,
         )
+
+    def _resolve_store_descriptor(self) -> tuple[tuple[str, str], str]:
+        now = time.monotonic()
+        if (
+            self._store_descriptor is not None
+            and now - self._store_descriptor_checked_at
+            < self.config.rag_index_reload_interval_seconds
+        ):
+            return self._store_descriptor
+
+        root_getter = getattr(self.chat_client, "course_materials_root", None)
+        course_materials_root = (
+            root_getter() if callable(root_getter) else self.config.course_materials_root
+        )
+        fallback_paths = resolve_rag_store_paths(
+            self.config.rag_index_path,
+            self.config.rag_metadata_path,
+            course_materials_root,
+        )
+        manifest_path = resolve_rag_manifest_path(
+            self.config.rag_index_manifest_path,
+            course_materials_root,
+        )
+        try:
+            descriptor = active_store_paths(manifest_path, fallback_paths)
+        except (OSError, ValueError):
+            if self._store_descriptor is None:
+                raise
+            descriptor = self._store_descriptor
+        self._store_descriptor = descriptor
+        self._store_descriptor_checked_at = now
+        return descriptor
 
     def _with_retrieved_context(
         self,

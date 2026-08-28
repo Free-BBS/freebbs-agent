@@ -141,6 +141,13 @@ class AgentConfig:
     rag_enabled: bool = False
     rag_index_path: str = "data/rag/index.faiss"
     rag_metadata_path: str = "data/rag/metadata.jsonl"
+    rag_index_manifest_path: str = "data/rag/current.json"
+    rag_index_reload_interval_seconds: float = 5.0
+    rag_course_snapshot_endpoint: str = "/internal/v1/rag-course-snapshot"
+    rag_course_snapshot_socket_path: str | None = None
+    rag_course_snapshot_token: str | None = field(default=None, repr=False)
+    rag_sync_timeout_seconds: float = 30.0
+    rag_version_retention: int = 3
     rag_top_k: int = 5
     rag_max_context_chunks: int = 4
     rag_embedding_provider: str = "local"
@@ -200,16 +207,35 @@ class AgentConfig:
             settings_timeout_seconds=float(os.getenv("AGENT_SETTINGS_TIMEOUT_SECONDS", "2")),
             settings_cache_ttl_seconds=float(os.getenv("AGENT_SETTINGS_CACHE_TTL_SECONDS", "30")),
             settings_stale_ttl_seconds=float(os.getenv("AGENT_SETTINGS_STALE_TTL_SECONDS", "300")),
-            rag_enabled=os.getenv("RAG_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
+            rag_enabled=os.getenv("RAG_ENABLED", "false").strip().lower()
+            in {"1", "true", "yes", "on"},
             rag_index_path=os.getenv("RAG_INDEX_PATH", "data/rag/index.faiss"),
             rag_metadata_path=os.getenv("RAG_METADATA_PATH", "data/rag/metadata.jsonl"),
+            rag_index_manifest_path=os.getenv(
+                "RAG_INDEX_MANIFEST_PATH", "data/rag/current.json"
+            ),
+            rag_index_reload_interval_seconds=max(
+                0.0, float(os.getenv("RAG_INDEX_RELOAD_INTERVAL_SECONDS", "5"))
+            ),
+            rag_course_snapshot_endpoint=os.getenv(
+                "RAG_COURSE_SNAPSHOT_ENDPOINT", "/internal/v1/rag-course-snapshot"
+            ).strip(),
+            rag_course_snapshot_socket_path=(
+                os.getenv("RAG_COURSE_SNAPSHOT_SOCKET") or settings_socket_path
+            ),
+            rag_course_snapshot_token=(
+                os.getenv("RAG_COURSE_SNAPSHOT_TOKEN") or agent_service_token
+            ),
+            rag_sync_timeout_seconds=float(os.getenv("RAG_SYNC_TIMEOUT_SECONDS", "30")),
+            rag_version_retention=max(1, int(os.getenv("RAG_VERSION_RETENTION", "3"))),
             rag_top_k=int(os.getenv("RAG_TOP_K", "5")),
             rag_max_context_chunks=int(os.getenv("RAG_MAX_CONTEXT_CHUNKS", "4")),
             rag_embedding_provider=os.getenv("RAG_EMBEDDING_PROVIDER", "local"),
             rag_local_embedding_model=os.getenv("RAG_LOCAL_EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5"),
             rag_local_embedding_dim=int(os.getenv("RAG_LOCAL_EMBEDDING_DIM", "512")),
             rag_local_model_dir=os.getenv("RAG_LOCAL_MODEL_DIR"),
-            rag_local_files_only=os.getenv("RAG_LOCAL_FILES_ONLY", "false").lower() in {"1", "true", "yes", "on"},
+            rag_local_files_only=os.getenv("RAG_LOCAL_FILES_ONLY", "false").strip().lower()
+            in {"1", "true", "yes", "on"},
             rag_hf_endpoint=os.getenv("RAG_HF_ENDPOINT"),
             rag_embedding_api_key=os.getenv("RAG_EMBEDDING_API_KEY"),
             rag_embedding_base_url=os.getenv("RAG_EMBEDDING_BASE_URL"),

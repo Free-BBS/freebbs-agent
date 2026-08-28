@@ -6,6 +6,7 @@ from freebbs_agent.app import create_app
 from freebbs_agent.config import AgentConfig
 from freebbs_agent.rag.embeddings import LocalEmbeddingClient, build_embedding_client
 from freebbs_agent.rag.faiss_store import FaissVectorStore
+from freebbs_agent.rag.manifest import write_rag_index_manifest
 from freebbs_agent.rag_agent import RagAgent
 from freebbs_agent.agent_utils import AgentInvocation, ChatOptions
 
@@ -181,6 +182,55 @@ class RagAgentTest(unittest.TestCase):
                 agent._store_paths,
                 (index_path, metadata_path),
             )
+
+    def test_rag_agent_hot_loads_a_new_manifest_version(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first_index = root / "v1/index.faiss"
+            first_metadata = root / "v1/metadata.jsonl"
+            second_index = root / "v2/index.faiss"
+            second_metadata = root / "v2/metadata.jsonl"
+            build_index(str(first_index), str(first_metadata))
+            build_index(str(second_index), str(second_metadata))
+            manifest_path = root / "current.json"
+            write_rag_index_manifest(
+                str(manifest_path),
+                {
+                    "version": "v1",
+                    "revision": 1,
+                    "index_path": str(first_index),
+                    "metadata_path": str(first_metadata),
+                },
+            )
+            config = make_config("unused.index", "unused.metadata")
+            config = AgentConfig(
+                **{
+                    **config.__dict__,
+                    "rag_index_manifest_path": str(manifest_path),
+                    "rag_index_reload_interval_seconds": 0,
+                }
+            )
+            agent = RagAgent(config, FakeChatClient())
+            invocation = AgentInvocation(
+                payload={"agent": "rag", "message": "解释频域分析"},
+                messages=[{"role": "user", "content": "解释频域分析"}],
+                options=ChatOptions(),
+            )
+
+            agent.run(invocation)
+            self.assertEqual(agent._store_version, "v1")
+            write_rag_index_manifest(
+                str(manifest_path),
+                {
+                    "version": "v2",
+                    "revision": 2,
+                    "index_path": str(second_index),
+                    "metadata_path": str(second_metadata),
+                },
+            )
+            agent.run(invocation)
+            self.assertEqual(agent._store_version, "v2")
+            self.assertEqual(agent._store_paths, (str(second_index), str(second_metadata)))
 
     def test_query_augmentation_uses_multiple_queries(self):
         with tempfile.TemporaryDirectory() as temp_dir:

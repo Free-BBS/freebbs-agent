@@ -6,7 +6,8 @@ from pathlib import Path
 
 from .agent_utils import AgentInvocation
 from .ai_client import AIClientError
-from .rag.paths import resolve_rag_store_paths
+from .rag.manifest import active_store_paths
+from .rag.paths import resolve_rag_manifest_path, resolve_rag_store_paths
 
 
 ROUTER_PROMPT = """你是 FREE-BBS 的请求路由器，只做分类，不回答问题。
@@ -61,10 +62,18 @@ class OnlineAgentRouter:
                 root_getter() if callable(root_getter) else self.config.course_materials_root
             )
 
-            index_path, metadata_path = resolve_rag_store_paths(
+            fallback_paths = resolve_rag_store_paths(
                 self.config.rag_index_path,
                 self.config.rag_metadata_path,
                 course_materials_root,
+            )
+            manifest_path = resolve_rag_manifest_path(
+                self.config.rag_index_manifest_path,
+                course_materials_root,
+            )
+            (index_path, metadata_path), _ = active_store_paths(
+                manifest_path,
+                fallback_paths,
             )
 
             return Path(index_path).is_file() and Path(metadata_path).is_file()

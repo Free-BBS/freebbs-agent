@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodically synchronize FREE-BBS course RAG data
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=30s
+AccuracySec=5s
+Persistent=true
+Unit=free-bbs-rag-indexer.service
+
+[Install]
+WantedBy=timers.target

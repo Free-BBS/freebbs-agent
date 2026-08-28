@@ -1,0 +1,18 @@
+[Unit]
+Description=Synchronize FREE-BBS MySQL course data into the RAG index
+After=network.target free-bbs-backend.service
+Wants=free-bbs-backend.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/data/www/freebbs-agent
+Environment=AGENT_SETTINGS_SOCKET=/run/free-bbs/agent-config.sock
+EnvironmentFile=/etc/free-bbs/freebbs-agent.env
+ExecStart=/data/www/freebbs-agent/.venv/bin/python scripts/sync_course_rag_index.py
+User=freebbs-agent
+Group=freebbs-agent-config
+SupplementaryGroups=freebbs-agent
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0027

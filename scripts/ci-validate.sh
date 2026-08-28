@@ -22,5 +22,7 @@ test -f app.py
 test -f requirements.txt
 test -f .env.example
 test -f deploy/systemd/free-bbs-agent.service
+test -f deploy/systemd/free-bbs-rag-indexer.service
+test -f deploy/systemd/free-bbs-rag-indexer.timer
 
 echo "[ci] done"
