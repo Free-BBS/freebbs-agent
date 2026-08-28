@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, stream_with_context
 
@@ -12,6 +13,11 @@ from .dev_page import DEV_AGENT_TEST_HTML, build_scenario_test_page
 from .navigation_dev_page import NAVIGATION_AGENT_TEST_HTML
 from .security import add_local_cors_headers, is_loopback_addr, reject_non_loopback_requests
 from .info_agent import InfoAgentClient, TrustedContextError, trusted_context_from_headers
+from .rag.manifest import active_store_paths, load_rag_index_manifest
+from .rag.paths import (
+    resolve_configured_rag_manifest_path,
+    resolve_configured_rag_store_paths,
+)
 
 
 def create_app(
@@ -36,7 +42,40 @@ def create_app(
 
     @app.get("/health")
     def health():
-        return jsonify({"status": "ok", "service": "freebbs-agent"})
+        rag_status = {"enabled": app_config.rag_enabled, "ready": False}
+        if not app_config.rag_enabled:
+            return jsonify(
+                {"status": "ok", "service": "freebbs-agent", "rag": rag_status}
+            )
+        try:
+            fallback_paths = resolve_configured_rag_store_paths(app_config)
+            manifest_path = resolve_configured_rag_manifest_path(app_config)
+            store_paths, version = active_store_paths(manifest_path, fallback_paths)
+            if not all(Path(path).is_file() for path in store_paths):
+                raise FileNotFoundError("RAG store is incomplete")
+            rag_status.update({"ready": True, "version": version})
+            if version != "static":
+                manifest = load_rag_index_manifest(manifest_path)
+                rag_status.update(
+                    {
+                        "revision": manifest.revision,
+                        "documentCount": manifest.document_count,
+                        "chunkCount": manifest.chunk_count,
+                        "builtAt": manifest.built_at,
+                    }
+                )
+        except (OSError, RuntimeError, ValueError):
+            return (
+                jsonify(
+                    {
+                        "status": "degraded",
+                        "service": "freebbs-agent",
+                        "rag": rag_status,
+                    }
+                ),
+                503,
+            )
+        return jsonify({"status": "ok", "service": "freebbs-agent", "rag": rag_status})
 
     @app.get("/dev/agent-test")
     def dev_agent_test():

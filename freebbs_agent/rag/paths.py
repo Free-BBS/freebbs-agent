@@ -36,6 +36,10 @@ def resolve_rag_store_paths(
     )
 
 
+def resolve_rag_manifest_path(manifest_path: str, course_materials_root: str) -> str:
+    return resolve_under_course_root(manifest_path, course_materials_root)
+
+
 def course_materials_root_for_config(config) -> str:
     if config.server_settings_partially_configured:
         raise ServerSettingsError(invalidate_cache=True)
@@ -60,5 +64,16 @@ def resolve_configured_rag_store_paths(config) -> tuple[str, str]:
     return resolve_rag_store_paths(
         config.rag_index_path,
         config.rag_metadata_path,
+        course_materials_root,
+    )
+
+
+def resolve_configured_rag_manifest_path(config) -> str:
+    try:
+        course_materials_root = course_materials_root_for_config(config)
+    except ServerSettingsError:
+        raise RuntimeError(SETTINGS_UNAVAILABLE_MESSAGE) from None
+    return resolve_rag_manifest_path(
+        config.rag_index_manifest_path,
         course_materials_root,
     )

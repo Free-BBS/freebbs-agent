@@ -265,6 +265,41 @@ export RAG_ENABLED=true
 python scripts/build_rag_index.py
 ```
 
+### 自动同步 Web 课程知识点
+
+生产环境通过 Web 后端的鉴权 Unix Socket 读取 MySQL 课程快照。数据库迁移
+`024_add_rag_index_revision.sql` 会创建课程索引 revision；Web 在课程知识点、正文分区和图谱
+关系成功变更后递增 revision。定时任务仅在 revision 变化时构建新索引。新索引写入版本目录，校验成功后原子更新
+`RAG_INDEX_MANIFEST_PATH`，运行中的 Agent 会自动热加载；加载失败时继续使用旧索引。
+
+首次部署：
+
+```bash
+# 先在 freebbs-web 仓库执行数据库迁移（或运行 db-migrate 工作流），
+# 确认 024_add_rag_index_revision.sql 已应用。
+sudo cp deploy/systemd/free-bbs-rag-indexer.service /etc/systemd/system/
+sudo cp deploy/systemd/free-bbs-rag-indexer.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start free-bbs-rag-indexer.service
+sudo systemctl enable --now free-bbs-rag-indexer.timer
+systemctl status free-bbs-rag-indexer.timer
+```
+
+定时任务通过 `AGENT_SETTINGS_SOCKET` 和 `AGENT_SERVICE_TOKEN` 获取课程数据，不需要在
+Agent 环境中配置 MySQL 密码。正式启用前先完成一次同步并运行
+`python -m freebbs_agent.rag.preflight`；随后设置 `RAG_ENABLED=true`、重启 Agent，并确认
+`/health` 中 `rag.ready=true`。生产索引目录应放在部署目录之外的持久化课程资料根目录中，
+并授予 `freebbs-agent` 写权限。
+
+推荐的生产路径配置如下；静态 seed 索引使用绝对路径，自动生成的 manifest 使用课程资料
+根目录下的相对路径：
+
+```dotenv
+RAG_INDEX_PATH=/data/www/freebbs-agent/data/rag/index.faiss
+RAG_METADATA_PATH=/data/www/freebbs-agent/data/rag/metadata.jsonl
+RAG_INDEX_MANIFEST_PATH=data/rag/current.json
+```
+
 国内环境可以设置 `RAG_HF_ENDPOINT=https://hf-mirror.com`。若模型已下载，使用：
 
 ```dotenv
@@ -448,6 +483,13 @@ X-FreeBBS-Permissions: web_learning:read,thu_info:read
 | `RAG_ENABLED` | `false` | 是否启用 RAG |
 | `RAG_INDEX_PATH` | `data/rag/index.faiss` | FAISS 索引 |
 | `RAG_METADATA_PATH` | `data/rag/metadata.jsonl` | 索引 metadata |
+| `RAG_INDEX_MANIFEST_PATH` | `data/rag/current.json` | 自动同步索引的原子版本清单 |
+| `RAG_INDEX_RELOAD_INTERVAL_SECONDS` | `5` | Agent 检查新索引版本的间隔 |
+| `RAG_COURSE_SNAPSHOT_ENDPOINT` | `/internal/v1/rag-course-snapshot` | Web 内部课程快照接口 |
+| `RAG_COURSE_SNAPSHOT_SOCKET` | 回退到 `AGENT_SETTINGS_SOCKET` | 课程快照 Unix Socket |
+| `RAG_COURSE_SNAPSHOT_TOKEN` | 回退到 `AGENT_SERVICE_TOKEN` | 课程快照认证 Token |
+| `RAG_SYNC_TIMEOUT_SECONDS` | `30` | 索引器读取课程快照的超时 |
+| `RAG_VERSION_RETENTION` | `3` | 保留的索引版本数 |
 | `RAG_TOP_K` | `5` | 每次检索候选数 |
 | `RAG_MAX_CONTEXT_CHUNKS` | `4` | 注入模型的最大 chunk 数 |
 | `RAG_EMBEDDING_PROVIDER` | `local` | `local` 或 `api` |
@@ -524,7 +566,7 @@ scripts/ci-validate.sh
 CI 脚本创建虚拟环境、安装依赖、执行 Python 与 shell 语法检查、运行测试，并验证部署所需
 文件。Push 到 `main` 时，`.github/workflows/deploy.yml` 会先运行校验，再通过 SSH 部署。
 
-当前版本的完整 Agent 测试套件包含 81 项测试，其中包括“明确切换到新板块”和“模糊追问
+当前版本的完整 Agent 测试套件包含 98 项测试，其中包括“明确切换到新板块”和“模糊追问
 沿用旧上下文”两类多轮 Navigation 回归用例。主站侧还应运行：
 
 ```bash
