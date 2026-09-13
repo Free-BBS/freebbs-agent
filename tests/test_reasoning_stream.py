@@ -25,6 +25,27 @@ class Stream:
 
 
 class ReasoningStreamTests(unittest.TestCase):
+    def test_glm52_progress_stream_uses_high_effort_and_keeps_reasoning_events(self):
+        stream = Stream([chunk(reasoning="计算分压"), chunk(content="2.5 V"), chunk(finish="stop")])
+        requests = []
+        def create(**payload):
+            requests.append(payload)
+            return stream
+        client = ChatClient(make_config(model="glm-5.2"), client_factory=lambda **kwargs:
+            SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+        events = []
+        token = current_progress.set(ModelProgress(events.append, Event(), answers=True))
+        try:
+            result = client.chat([{"role": "user", "content": "计算分压"}])
+        finally:
+            current_progress.reset(token)
+        self.assertEqual(requests[0]["extra_body"], {
+            "thinking": {"type": "enabled"}, "reasoning_effort": "high"})
+        self.assertTrue(requests[0]["stream"])
+        self.assertEqual(result["answer"], "2.5 V")
+        self.assertEqual(events[0]["reasoning_delta"], "计算分压")
+        self.assertTrue(stream.closed)
+
     def client(self, chunks):
         self.stream = Stream(chunks)
         completions = SimpleNamespace(create=lambda **payload: self.stream)

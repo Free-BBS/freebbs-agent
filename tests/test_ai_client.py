@@ -107,6 +107,34 @@ class RecordingClientFactory:
 
 
 class ChatClientSettingsTest(unittest.TestCase):
+    def test_glm52_policy_follows_effective_model_for_chat_and_stream(self):
+        for stream in (False, True):
+            for configured, override, expected in (
+                ("glm-5.2", None, "glm-5.2"),
+                ("glm-5.1", "glm-5.2", "glm-5.2"),
+                ("glm-5.2", "glm-5.1", "glm-5.1"),
+                ("managed-model", None, "managed-model"),
+            ):
+                with self.subTest(stream=stream, configured=configured, override=override):
+                    factory = RecordingClientFactory()
+                    client = ChatClient(make_config(), settings_provider=SequenceSettingsProvider(
+                        [make_snapshot(model=configured)]), client_factory=factory)
+                    options = {"model": override, "temperature": 0.2, "max_tokens": 2048}
+                    messages = [{"role": "user", "content": "测试"}]
+                    if stream:
+                        self.assertEqual(list(client.stream_chat(messages, **options)), ["你", "好"])
+                    else:
+                        self.assertEqual(client.chat(messages, **options)["answer"], "pong")
+                    payload = factory.clients[0].completions.calls[0]
+                    self.assertEqual(payload["model"], expected)
+                    self.assertEqual(payload["max_tokens"], 2048)
+                    self.assertEqual(payload["temperature"], 0.2)
+                    if expected == "glm-5.2":
+                        self.assertEqual(payload["extra_body"], {
+                            "thinking": {"type": "enabled"}, "reasoning_effort": "high"})
+                    else:
+                        self.assertNotIn("extra_body", payload)
+
     def test_each_chat_reads_one_snapshot_and_reuses_client_for_same_revision(self):
         snapshot = make_snapshot()
         provider = SequenceSettingsProvider([snapshot, snapshot])

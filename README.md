@@ -465,6 +465,13 @@ X-FreeBBS-Permissions: web_learning:read,thu_info:read
 | `AGENT_SETTINGS_STALE_TTL_SECONDS` | `300` | 旧配置最长使用时间 |
 | `COURSE_MATERIALS_ROOT` | 空 | 主服务托管课程资料根目录 |
 
+线上托管模型使用 `glm-5.2`；环境变量默认值仅在未启用托管配置时生效。
+当一次请求最终选择 `glm-5.2`（包括显式模型覆盖）时，客户端统一发送
+`thinking: {"type": "enabled"}` 和 `reasoning_effort: "high"`，适用于普通回答、
+正文流和 Max 思考流。按 [Infini-AI 的 GLM 参数说明](https://docs.infini-ai.com/gen-studio/api/text-generation/tutorial-reasoning/glm.html)，
+`high` 低于默认的 `max`，`low` / `medium` 同样映射为 `high`。该策略保留自适应思考，
+不保证每次响应包含思考内容，也不改变每轮超时；其他模型不发送这些原生参数。
+
 ### Navigation 与在线路由
 
 | 变量 | 默认值 | 说明 |
