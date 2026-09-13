@@ -155,6 +155,14 @@ class ChatClient:
             payload["temperature"] = temperature
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
+        if payload["model"] == "glm-5.2":
+            # Infini-AI defaults to max; low/medium both map to high.
+            # Scope native options to this model so other providers/models
+            # do not receive unsupported reasoning parameters.
+            payload["extra_body"] = {
+                "thinking": {"type": "enabled"},
+                "reasoning_effort": "high",
+            }
         return payload
 
     def _get_settings_snapshot(self) -> ServerSettingsSnapshot:
