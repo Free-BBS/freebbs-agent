@@ -8,6 +8,7 @@ from flask import Flask, Response, jsonify, request, stream_with_context
 from .agent_utils import AgentInvocation, ChatOptions
 from .agents import create_default_mux
 from .ai_client import AIClientError, ChatClient
+from .reasoning_stream import reasoning_events
 from .config import AgentConfig
 from .dev_page import DEV_AGENT_TEST_HTML, build_scenario_test_page
 from .navigation_dev_page import NAVIGATION_AGENT_TEST_HTML
@@ -324,6 +325,10 @@ def optional_bool(payload: dict, key: str) -> bool:
 
 
 def sse_chat_stream(agent, invocation):
+    if invocation.payload.get("reasoning_stream") is True:
+        for event in reasoning_events(agent, invocation):
+            yield ": keepalive\n\n" if event is None else sse_event(event)
+        return
     try:
         for chunk in agent.stream(invocation):
             for char in chunk:

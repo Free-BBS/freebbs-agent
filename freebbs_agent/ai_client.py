@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from .config import AgentConfig
+from .reasoning_stream import current_progress, ProgressCancelled
 from .server_settings import (
     SETTINGS_UNAVAILABLE_MESSAGE,
     ServerSettingsError,
@@ -61,6 +62,10 @@ class ChatClient:
             max_tokens=max_tokens,
         )
 
+        progress = current_progress.get()
+        if progress is not None:
+            return self._chat_with_progress(client, payload, progress)
+
         try:
             response = client.chat.completions.create(**payload)
         except Exception:  # pragma: no cover - SDK/provider specific
@@ -72,6 +77,35 @@ class ChatClient:
             "model": getattr(response, "model", payload["model"]),
             "finish_reason": getattr(choice, "finish_reason", None),
         }
+
+    def _chat_with_progress(self, client, payload, progress):
+        parts = []
+        model = payload["model"]
+        finish_reason = None
+        try:
+            if progress.cancelled.is_set():
+                raise ProgressCancelled()
+            stream = client.chat.completions.create(**payload, stream=True)
+            with progress.track(stream) as call_id:
+                for chunk in stream:
+                    if not getattr(chunk, "choices", None):
+                        continue
+                    choice = chunk.choices[0]
+                    delta = getattr(choice, "delta", None)
+                    content = getattr(delta, "content", None)
+                    reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+                    progress.send(call_id, reasoning=reasoning, content=content)
+                    if isinstance(content, str):
+                        parts.append(content)
+                    model = getattr(chunk, "model", None) or model
+                    finish_reason = getattr(choice, "finish_reason", None) or finish_reason
+            if finish_reason is None:
+                raise AIClientError("AI provider stream ended before completion")
+            return {"answer": "".join(parts), "model": model, "finish_reason": finish_reason}
+        except ProgressCancelled:
+            raise
+        except Exception:
+            raise AIClientError("AI provider request failed") from None
 
     def stream_chat(
         self,

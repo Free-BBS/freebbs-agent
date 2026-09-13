@@ -689,3 +689,9 @@ Agent 不可用时，主站应显示可理解的临时错误，不得暴露内�
 
 课程知识图谱后续开发仍遵循稳定 ID、结构化资料来源、关系端点校验、真实 embedding、可
 追溯引用、索引一致性、低置信度澄清和明确权限边界。历史细节仍可通过 Git 记录查看。
+
+### Stream model reasoning with the complete result
+
+For `/api/v1/chat`, set `stream: true` and `reasoning_stream: true` to receive separate `reasoning_delta` events, each identified by `reasoning_id`. The terminal SSE event contains `result` and `done: true`, preserving navigation routes and delegated-agent metadata. General-chat requests also emit answer `delta` events. Existing streaming clients keep the original protocol when the new flag is absent.
+
+Reasoning stays out of final answers and future prompts. Request-local progress is propagated to parallel navigation/chat calls, with separate IDs; disconnects close active provider streams. Output queues are bounded, and heartbeat comments are not generated content.
