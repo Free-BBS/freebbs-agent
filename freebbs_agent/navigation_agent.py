@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextvars import copy_context
+
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -176,8 +178,8 @@ class NavigationAgent(FreeBBSAgent):
 
         general_invocation = self._general_invocation(invocation)
         with ThreadPoolExecutor(max_workers=2) as executor:
-            navigation_future = executor.submit(self._navigate, invocation)
-            general_future = executor.submit(self.general_agent.run, general_invocation)
+            navigation_future = executor.submit(copy_context().run, self._navigate, invocation)
+            general_future = executor.submit(copy_context().run, self.general_agent.run, general_invocation)
             navigation_result = navigation_future.result()
             try:
                 general_result = general_future.result()
