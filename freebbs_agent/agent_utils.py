@@ -43,6 +43,8 @@ class ChatOptions:
     temperature: float | None = None
     max_tokens: int | None = None
     stream: bool = False
+    reasoning_effort: str | None = None
+    vision_images: list | None = None
 
 
 @dataclass(frozen=True)
@@ -141,6 +143,8 @@ class FreeBBSAgent:
             model=options.model,
             temperature=options.temperature,
             max_tokens=options.max_tokens,
+            **({"reasoning_effort": options.reasoning_effort} if options.reasoning_effort is not None else {}),
+            **({"vision_images": options.vision_images} if options.vision_images else {}),
         )
 
     def stream_llm(self, prompt: str | list[dict[str, str]], options: ChatOptions) -> Iterator[str]:
@@ -156,6 +160,8 @@ class FreeBBSAgent:
             model=options.model,
             temperature=options.temperature,
             max_tokens=options.max_tokens,
+            **({"reasoning_effort": options.reasoning_effort} if options.reasoning_effort is not None else {}),
+            **({"vision_images": options.vision_images} if options.vision_images else {}),
         )
 
     def _prompt_to_messages(self, prompt: str | list[dict[str, str]]) -> list[dict[str, str]]:

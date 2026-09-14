@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from .config import AgentConfig
+from .model_options import reasoning_options, with_images
 from .reasoning_stream import current_progress, ProgressCancelled
 from .server_settings import (
     SETTINGS_UNAVAILABLE_MESSAGE,
@@ -51,6 +52,8 @@ class ChatClient:
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        reasoning_effort: str | None = None,
+        vision_images: list | None = None,
     ) -> dict[str, Any]:
         snapshot = self._get_settings_snapshot()
         client = self._get_client(snapshot)
@@ -60,6 +63,8 @@ class ChatClient:
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
+            reasoning_effort=reasoning_effort,
+            vision_images=vision_images,
         )
 
         progress = current_progress.get()
@@ -114,6 +119,8 @@ class ChatClient:
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        reasoning_effort: str | None = None,
+        vision_images: list | None = None,
     ) -> Iterator[str]:
         snapshot = self._get_settings_snapshot()
         client = self._get_client(snapshot)
@@ -123,6 +130,8 @@ class ChatClient:
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
+            reasoning_effort=reasoning_effort,
+            vision_images=vision_images,
         )
         payload["stream"] = True
 
@@ -146,6 +155,8 @@ class ChatClient:
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        reasoning_effort: str | None = None,
+        vision_images: list | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": model or snapshot.model,
@@ -155,14 +166,8 @@ class ChatClient:
             payload["temperature"] = temperature
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
-        if payload["model"] == "glm-5.2":
-            # Infini-AI defaults to max; low/medium both map to high.
-            # Scope native options to this model so other providers/models
-            # do not receive unsupported reasoning parameters.
-            payload["extra_body"] = {
-                "thinking": {"type": "enabled"},
-                "reasoning_effort": "high",
-            }
+        payload.update(reasoning_options(payload["model"], reasoning_effort))
+        payload["messages"] = with_images(messages, vision_images, payload["model"])
         return payload
 
     def _get_settings_snapshot(self) -> ServerSettingsSnapshot:

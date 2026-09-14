@@ -465,12 +465,18 @@ X-FreeBBS-Permissions: web_learning:read,thu_info:read
 | `AGENT_SETTINGS_STALE_TTL_SECONDS` | `300` | 旧配置最长使用时间 |
 | `COURSE_MATERIALS_ROOT` | 空 | 主服务托管课程资料根目录 |
 
-线上托管模型使用 `glm-5.2`；环境变量默认值仅在未启用托管配置时生效。
-当一次请求最终选择 `glm-5.2`（包括显式模型覆盖）时，客户端统一发送
-`thinking: {"type": "enabled"}` 和 `reasoning_effort: "high"`，适用于普通回答、
-正文流和 Max 思考流。按 [Infini-AI 的 GLM 参数说明](https://docs.infini-ai.com/gen-studio/api/text-generation/tutorial-reasoning/glm.html)，
-`high` 低于默认的 `max`，`low` / `medium` 同样映射为 `high`。该策略保留自适应思考，
-不保证每次响应包含思考内容，也不改变每轮超时；其他模型不发送这些原生参数。
+线上默认模型为 `glm-5.2`，用户可按次选择模型及其实际支持的思考强度。
+`freebbs_agent/model_catalog.json` 与 Web 仓库的 `backend/ai-model-catalog.json` 同步维护；
+`model_options.py` 根据最终模型发送原生参数，GLM-5.2 默认使用低于 `max` 的 `high`。
+`reasoning_effort` 接受所选模型支持的 `off` / `auto` / `low` / `high` / `max`，
+不支持的组合会被拒绝。普通回答、正文流、Max 思考流共用同一参数路径。
+
+可选的 `vision_images` 是至多 13 个 `{label, dataUrl}` 对象。Web 校验并生成图像；
+Agent 仅在已验证支持视觉的模型上，将图像附加到最后一条 user 消息。
+路由、检索和历史中的文本保持原状，不把 Base64 存进会话历史。
+模型选择、强度和图像均为请求级配置，不改变其他用户或服务默认值。
+
+模型控制依据：[Infini-AI 推理参数](https://docs.infini-ai.com/gen-studio/api/text-generation/tutorial-reasoning/)。
 
 ### Navigation 与在线路由
 
