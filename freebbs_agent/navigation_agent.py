@@ -474,7 +474,8 @@ confidence 必须是 0 到 1。模糊请求可返回最多 3 个最可能入口�
         messages.extend(message for message in invocation.messages if message["role"] != "system")
         llm_result = self.chat_client.chat(
             messages,
-            model=self.config.navigation_model or invocation.options.model,
+            model=invocation.options.model or self.config.navigation_model,
+            **({"reasoning_effort": invocation.options.reasoning_effort} if invocation.options.reasoning_effort is not None else {}),
             temperature=0.2 if invocation.options.temperature is None else invocation.options.temperature,
             max_tokens=700 if invocation.options.max_tokens is None else invocation.options.max_tokens,
         )

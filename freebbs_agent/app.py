@@ -10,6 +10,7 @@ from .agents import create_default_mux
 from .ai_client import AIClientError, ChatClient
 from .reasoning_stream import reasoning_events
 from .config import AgentConfig
+from .model_options import validate_images
 from .dev_page import DEV_AGENT_TEST_HTML, build_scenario_test_page
 from .navigation_dev_page import NAVIGATION_AGENT_TEST_HTML
 from .security import add_local_cors_headers, is_loopback_addr, reject_non_loopback_requests
@@ -246,11 +247,17 @@ def build_invocation(payload: dict, config: AgentConfig) -> AgentInvocation:
     if model is not None and not isinstance(model, str):
         raise ValueError("model must be a string")
 
+    effort = payload.get("reasoning_effort")
+    if effort is not None and effort not in ("off", "auto", "low", "high", "max"):
+        raise ValueError("Invalid reasoning effort")
+    images = validate_images(payload.get("vision_images"))
     return AgentInvocation(
         payload=payload,
         messages=messages,
         options=ChatOptions(
             model=model,
+            reasoning_effort=effort,
+            vision_images=images,
             temperature=optional_float(payload, "temperature"),
             max_tokens=optional_int(payload, "max_tokens"),
             stream=optional_bool(payload, "stream"),
