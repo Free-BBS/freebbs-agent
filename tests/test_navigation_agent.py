@@ -1,6 +1,6 @@
 import unittest
 
-from freebbs_agent.agent_utils import AgentInvocation, ChatOptions
+from freebbs_agent.agent_utils import AgentInvocation, ChatOptions, FreeBBSAgent
 from freebbs_agent.app import create_app
 from freebbs_agent.config import AgentConfig
 from freebbs_agent.navigation_agent import NavigationAgent
@@ -54,6 +54,7 @@ class FakeSubagent:
         result = {
             "answer": f"{self.name}-answer",
             "agent": self.name,
+            "model": f"{self.name}-model",
             "status": "success",
             "finish_reason": "stop",
         }
@@ -209,6 +210,35 @@ class NavigationAgentTest(unittest.TestCase):
         self.assertTrue(result["routes"][0]["url"].startswith("https://bbs.example.edu/course?q="))
         self.assertEqual(chat_client.calls, 1)
 
+    def test_combined_chat_passes_the_same_images_to_navigation_and_general_chat(self):
+        config = AgentConfig(**{**make_config().__dict__, "api_key": "test-key"})
+        calls = []
+
+        class RecordingClient(FakeNavigationChatClient):
+            def chat(self, messages, **kwargs):
+                calls.append((messages, kwargs))
+                if "导引员" in messages[0]["content"]:
+                    return super().chat(messages, **kwargs)
+                return {"answer": "图片中是一张电路图", "model": "kimi-k2.6"}
+
+        client = RecordingClient()
+        agent = NavigationAgent(config, client, general_agent=FreeBBSAgent(config, client))
+        for images in ([{"label": "截图", "dataUrl": "data:image/png;base64,YQ=="}], None):
+            with self.subTest(images=images):
+                calls.clear()
+                result = agent.run(AgentInvocation(
+                    payload={"agent": "navigation", "combine_general_chat": True},
+                    messages=[{"role": "user", "content": "这个是什么图片"}],
+                    options=ChatOptions(model="kimi-k2.6", vision_images=images),
+                ))
+                self.assertEqual(len(calls), 2)
+                self.assertTrue(any("导引员" in messages[0]["content"] for messages, _ in calls))
+                for messages, options in calls:
+                    self.assertEqual(options["model"], "kimi-k2.6")
+                    self.assertEqual(options.get("vision_images"), images)
+                    self.assertEqual(messages[-1]["content"], "这个是什么图片")
+                self.assertIn("电路图", result["answer"])
+
     def test_high_confidence_rule_skips_llm(self):
         config = AgentConfig(
             **{**make_config().__dict__, "api_key": "test-key"}
@@ -312,6 +342,7 @@ class NavigationAgentTest(unittest.TestCase):
         self.assertTrue(result["delegation"]["executed"])
         self.assertEqual(result["subagent"]["agent"], "rag")
         self.assertEqual(result["answer"], "rag-answer")
+        self.assertEqual(result["model"], "rag-model")
         self.assertEqual(len(rag.invocations), 1)
         self.assertEqual(len(info.invocations), 0)
 
@@ -378,6 +409,7 @@ class NavigationAgentTest(unittest.TestCase):
         )
         self.assertEqual(result["agent"], "general_chat")
         self.assertEqual(result["answer"], "general_chat-answer")
+        self.assertEqual(result["model"], "general_chat-model")
         self.assertEqual(result["response_mode"], "general_chat")
         self.assertTrue(result["routes"])
         self.assertEqual(result["routes"], result["navigation_routes"])
@@ -426,6 +458,7 @@ class NavigationAgentTest(unittest.TestCase):
             )
         )
         self.assertEqual(result["answer"], "rag-answer")
+        self.assertEqual(result["model"], "rag-model")
         self.assertEqual(result["response_mode"], "rag")
         self.assertTrue(result["routes"])
         self.assertTrue(result["navigation_routes"])
@@ -465,6 +498,7 @@ class NavigationAgentTest(unittest.TestCase):
 
         self.assertEqual(result["response_mode"], "rag")
         self.assertEqual(result["answer"], "rag-answer")
+        self.assertEqual(result["model"], "rag-model")
         self.assertEqual(result["navigation_routes"], result["routes"])
         self.assertEqual(
             result["routes"][0]["url"],
@@ -497,6 +531,7 @@ class NavigationAgentTest(unittest.TestCase):
         )
         self.assertEqual(result["response_mode"], "rag")
         self.assertEqual(result["answer"], "rag-answer")
+        self.assertEqual(result["model"], "rag-model")
 
     def test_combined_chat_keeps_routes_for_explicit_navigation(self):
         rag = FakeSubagent("rag")
@@ -524,6 +559,7 @@ class NavigationAgentTest(unittest.TestCase):
         self.assertTrue(result["navigation_requested"])
         self.assertEqual(result["response_mode"], "navigation")
         self.assertEqual(result["answer"], "general_chat-answer")
+        self.assertEqual(result["model"], "general_chat-model")
         self.assertTrue(result["routes"])
         self.assertEqual(result["delegation"]["selected"], "none")
         self.assertEqual(len(rag.invocations), 0)
