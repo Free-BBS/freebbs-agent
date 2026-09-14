@@ -221,6 +221,7 @@ class NavigationAgent(FreeBBSAgent):
                 result["navigation_answer"] = navigation_result["answer"]
                 result["chat_answer"] = general_result["answer"]
                 result["answer"] = general_result["answer"]
+                result["model"] = general_result.get("model")
             return result
 
         if general_result and general_result.get("answer"):
@@ -351,6 +352,8 @@ class NavigationAgent(FreeBBSAgent):
             navigation_answer = result.get("answer", navigation_answer)
         result["navigation_answer"] = navigation_answer
         result["answer"] = child_result.get("answer", navigation_result["answer"])
+        if child_result.get("answer"):
+            result["model"] = child_result.get("model")
         result["subagent"] = child_result
         result["delegation"]["status"] = child_result.get("status", "completed")
         return result
@@ -475,6 +478,7 @@ confidence 必须是 0 到 1。模糊请求可返回最多 3 个最可能入口�
         llm_result = self.chat_client.chat(
             messages,
             model=invocation.options.model or self.config.navigation_model,
+            **({"vision_images": invocation.options.vision_images} if invocation.options.vision_images else {}),
             **({"reasoning_effort": invocation.options.reasoning_effort} if invocation.options.reasoning_effort is not None else {}),
             temperature=0.2 if invocation.options.temperature is None else invocation.options.temperature,
             max_tokens=700 if invocation.options.max_tokens is None else invocation.options.max_tokens,
