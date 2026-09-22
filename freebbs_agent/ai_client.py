@@ -219,6 +219,35 @@ class ChatClient:
             )
             raise AIClientError("Image generation provider request failed", code=code) from None
 
+    def image_model_diagnostics(self) -> list[dict[str, Any]]:
+        """Return non-secret Seedream model metadata for loopback-only diagnostics."""
+        snapshot = self._get_settings_snapshot()
+        client = self._get_client(snapshot)
+        diagnostics = []
+        for item in client.models.list().data:
+            model_id = str(getattr(item, "id", ""))
+            if "seedream" not in model_id.casefold():
+                continue
+            dumped = item.model_dump() if hasattr(item, "model_dump") else {}
+            diagnostics.append(
+                {
+                    "id": model_id,
+                    "object": dumped.get("object"),
+                    "created": dumped.get("created"),
+                    "owned_by": dumped.get("owned_by"),
+                    "extra": {
+                        key: value
+                        for key, value in dumped.items()
+                        if key not in {"id", "object", "created", "owned_by"}
+                        and not any(
+                            marker in key.casefold()
+                            for marker in ("key", "token", "secret", "authorization")
+                        )
+                    },
+                }
+            )
+        return diagnostics
+
     def _build_payload(
         self,
         messages: list[dict[str, str]],

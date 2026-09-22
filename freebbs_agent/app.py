@@ -167,6 +167,13 @@ def create_app(
     def dev_navigation_test():
         return Response(NAVIGATION_AGENT_TEST_HTML, mimetype="text/html")
 
+    @app.get("/dev/image-provider-diagnostics")
+    def image_provider_diagnostics():
+        try:
+            return jsonify({"models": app.chat_client.image_model_diagnostics()})  # type: ignore[attr-defined]
+        except AIClientError as exc:
+            return jsonify({"error": {"code": exc.code, "message": str(exc)}}), 502
+
     @app.post("/api/v1/chat")
     def chat():
         payload = request.get_json(silent=True)
