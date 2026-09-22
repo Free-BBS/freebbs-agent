@@ -45,6 +45,11 @@ class ModelProgress:
         if self.answers and isinstance(content, str) and content:
             self.emit({"delta": content})
 
+    def status(self, value):
+        if self.cancelled.is_set():
+            raise ProgressCancelled()
+        self.emit({"status": value})
+
     @staticmethod
     def _close(stream):
         try:
