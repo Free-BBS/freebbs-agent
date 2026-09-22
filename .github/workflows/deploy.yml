@@ -5,6 +5,12 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      lightweight:
+        description: Reuse production dependencies and omit the wheelhouse from the release archive
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: freebbs-agent-production
@@ -80,12 +86,17 @@ jobs:
         run: |
           set -euo pipefail
           ARCHIVE_PATH="/tmp/freebbs-agent-${GITHUB_SHA}.tar.gz"
-          tar \
-            --exclude='.git' \
-            --exclude='.venv' \
-            --exclude='__pycache__' \
-            --exclude='*.pyc' \
-            -czf "$ARCHIVE_PATH" .
+          excludes=(
+            --exclude='.git'
+            --exclude='.venv'
+            --exclude='__pycache__'
+            --exclude='*.pyc'
+          )
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.lightweight }}" == "true" ]]; then
+            excludes+=(--exclude='wheelhouse')
+            echo "[deploy] lightweight manual release: reusing production dependencies"
+          fi
+          tar "${excludes[@]}" -czf "$ARCHIVE_PATH" .
 
       - name: Configure SSH
         run: |
