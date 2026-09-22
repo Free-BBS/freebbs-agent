@@ -171,7 +171,13 @@ def create_app(
     def image_provider_diagnostics():
         try:
             gateway_label = request.args.get("gateway_label")
-            return jsonify(app.chat_client.image_model_diagnostics(gateway_label))  # type: ignore[attr-defined]
+            probe_responses = request.args.get("probe_responses") == "1"
+            return jsonify(  # type: ignore[attr-defined]
+                app.chat_client.image_model_diagnostics(
+                    gateway_label,
+                    probe_responses=probe_responses,
+                )
+            )
         except AIClientError as exc:
             return jsonify({"error": {"code": exc.code, "message": str(exc)}}), 502
 

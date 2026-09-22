@@ -222,7 +222,12 @@ class ChatClient:
             )
             raise AIClientError("Image generation provider request failed", code=code) from None
 
-    def image_model_diagnostics(self, gateway_label: str | None = None) -> dict[str, Any]:
+    def image_model_diagnostics(
+        self,
+        gateway_label: str | None = None,
+        *,
+        probe_responses: bool = False,
+    ) -> dict[str, Any]:
         """Return non-secret Seedream model metadata for loopback-only diagnostics."""
         snapshot = self._get_settings_snapshot()
         client = self._get_client(snapshot)
@@ -364,6 +369,44 @@ class ChatClient:
                     probes.append(
                         {"path": url, "body_keys": [], "error": type(exc).__name__}
                     )
+            if probe_responses:
+                for body in (
+                    {
+                        "model": "doubao-seedream-5-0-260128",
+                        "input": "生成一张纯蓝色方形图片",
+                    },
+                    {
+                        "model": snapshot.model,
+                        "input": "生成一张纯蓝色方形图片",
+                        "tools": [{"type": "image_generation"}],
+                    },
+                ):
+                    url = f"{snapshot.base_url.rstrip('/')}/responses"
+                    try:
+                        response = probe_client.post(
+                            url,
+                            headers={"Authorization": f"Bearer {snapshot.api_key}"},
+                            json=body,
+                            timeout=self._config.image_generation_timeout_seconds,
+                        )
+                        probes.append(
+                            {
+                                "path": url,
+                                "body_keys": sorted(body),
+                                "model": body["model"],
+                                "status": response.status_code,
+                                "response": response.text[:4000],
+                            }
+                        )
+                    except httpx.HTTPError as exc:
+                        probes.append(
+                            {
+                                "path": url,
+                                "body_keys": sorted(body),
+                                "model": body["model"],
+                                "error": type(exc).__name__,
+                            }
+                        )
         return {
             "models": diagnostics,
             "probes": probes,
