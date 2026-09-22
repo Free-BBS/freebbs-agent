@@ -267,6 +267,33 @@ class ChatClient:
             ),
         ]
         with httpx.Client(timeout=10, trust_env=False) as probe_client:
+            try:
+                response = probe_client.get(
+                    f"{snapshot.base_url.rstrip('/')}/models/doubao-seedream-5-0-260128",
+                    headers={"Authorization": f"Bearer {snapshot.api_key}"},
+                )
+                probes.append(
+                    {
+                        "path": "/maas/v1/models/doubao-seedream-5-0-260128",
+                        "body_keys": [],
+                        "status": response.status_code,
+                        "response": response.text[:4000],
+                        "headers": {
+                            key: value
+                            for key, value in response.headers.items()
+                            if key.casefold()
+                            in {"content-type", "traceresponse", "x-infini-gateway"}
+                        },
+                    }
+                )
+            except httpx.HTTPError as exc:
+                probes.append(
+                    {
+                        "path": "/maas/v1/models/doubao-seedream-5-0-260128",
+                        "body_keys": [],
+                        "error": type(exc).__name__,
+                    }
+                )
             for path, body in probe_requests:
                 try:
                     response = probe_client.post(
