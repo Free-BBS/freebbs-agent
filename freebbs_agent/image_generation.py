@@ -21,6 +21,18 @@ ALLOWED_SIZES = {
     "landscape": "2560x1440",
     "portrait": "1440x2560",
 }
+EXPLICIT_IMAGE_REQUEST = re.compile(
+    r"(?:生成|画|绘制|创作|设计|做)(?:一|1)?(?:张|幅|个)?[\s\S]{0,80}"
+    r"(?:图片|图像|插画|海报|封面|头像|壁纸|卡通|漫画)"
+    r"|(?:generate|draw|create|design)[\s\S]{0,80}"
+    r"(?:image|picture|illustration|poster|wallpaper)",
+    re.IGNORECASE,
+)
+IMAGE_REQUEST_NEGATION = re.compile(
+    r"(?:不要|别|无需|不用|不需要)[^。！？\n]{0,16}(?:生成|画|绘制|图片|图像)"
+    r"|(?:do not|don't|no need to)[^.!?\n]{0,24}(?:generate|draw|image)",
+    re.IGNORECASE,
+)
 
 IMAGE_TOOL_PROMPT = """
 你可以在确有必要时调用一次图片生成工具。它适合概念插画、视觉化场景、海报、封面、设计参考，或用户明确要求生成图片的请求；普通问答、公式推导、代码、电路精确原理图和仅靠文字就能清楚说明的内容不要调用。不得为了装饰回答而生图。
@@ -77,6 +89,40 @@ def parse_image_request(answer: str) -> tuple[str, ImageRequest | None]:
     return cleaned, ImageRequest(prompt.strip(), alt.strip(), ALLOWED_SIZES[aspect_ratio])
 
 
+def explicit_image_request(
+    messages: list[dict[str, Any]], payload: dict[str, Any] | None = None
+) -> ImageRequest | None:
+    """Recover explicit user image requests when a chat model omits the tool block."""
+    if payload and payload.get("source") == "comment":
+        context = payload.get("context")
+        trigger = context.get("triggerComment", {}) if isinstance(context, dict) else {}
+        if not isinstance(trigger, dict) or not isinstance(trigger.get("contentMarkdown"), str):
+            return None
+        messages = [{"role": "user", "content": trigger["contentMarkdown"]}]
+    for message in reversed(messages):
+        if message.get("role") != "user" or not isinstance(message.get("content"), str):
+            continue
+        text = " ".join(message["content"].strip().split())
+        if (
+            not text
+            or IMAGE_REQUEST_NEGATION.search(text)
+            or not EXPLICIT_IMAGE_REQUEST.search(text)
+        ):
+            return None
+        lowered = text.casefold()
+        ratio = "square"
+        if any(marker in lowered for marker in ("横版", "横向", "宽屏", "landscape")):
+            ratio = "landscape"
+        elif any(marker in lowered for marker in ("竖版", "竖向", "手机壁纸", "portrait")):
+            ratio = "portrait"
+        prompt = (
+            f"根据用户要求创作图片：{text[:1600]}。"
+            "画面主体清晰，构图完整，不添加水印、边框或无关文字。"
+        )
+        return ImageRequest(prompt, "Max 根据你的描述生成的图片", ALLOWED_SIZES[ratio])
+    return None
+
+
 def run_with_optional_image(agent, invocation: AgentInvocation, messages) -> dict[str, Any]:
     allowed = (
         invocation.payload.get("allow_image_generation") is True
@@ -95,22 +141,32 @@ def run_with_optional_image(agent, invocation: AgentInvocation, messages) -> dic
 
     answer = str(result.get("answer") or "")
     replaced, request = parse_image_request(answer)
+    recovered = False
     if request is None:
-        return result
+        request = explicit_image_request(messages, invocation.payload)
+        if request is None:
+            return result
+        recovered = True
 
     try:
         image = agent.chat_client.generate_image(request.prompt, size=request.size)
     except AIClientError as exc:
-        result["answer"] = IMAGE_BLOCK.sub(
-            "\n\n> 图片生成暂时不可用，请稍后再试。\n\n", answer, count=1
-        ).strip()
+        result["answer"] = (
+            "> 图片生成暂时不可用，请稍后再试。"
+            if recovered
+            else IMAGE_BLOCK.sub(
+                "\n\n> 图片生成暂时不可用，请稍后再试。\n\n", answer, count=1
+            ).strip()
+        )
         reason = getattr(exc, "code", "image_generation_failed")
         if not re.fullmatch(r"[a-z0-9_]{1,64}", reason):
             reason = "image_generation_failed"
         result["image_generation"] = {"status": "failed", "reason": reason}
         return result
 
-    result["answer"] = replaced.strip()
+    result["answer"] = (
+        f"图片已经生成好了：\n\n{IMAGE_PLACEHOLDER}" if recovered else replaced.strip()
+    )
     result["generated_images"] = [
         {
             "placeholder": IMAGE_PLACEHOLDER,
