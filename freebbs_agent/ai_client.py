@@ -314,7 +314,17 @@ class ChatClient:
                     probes.append(
                         {"path": url, "body_keys": [], "error": type(exc).__name__}
                     )
-        return {"models": diagnostics, "probes": probes}
+        return {
+            "models": diagnostics,
+            "probes": probes,
+            "api_key_shape": {
+                "length": len(snapshot.api_key),
+                "hyphens": [
+                    index for index, character in enumerate(snapshot.api_key) if character == "-"
+                ],
+                "dots": snapshot.api_key.count("."),
+            },
+        }
 
     def _build_payload(
         self,
