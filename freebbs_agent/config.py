@@ -122,6 +122,10 @@ FREE BBS 的主要功能区包括：
 '''
 )
 
+DEFAULT_IMAGE_GENERATION_BASE_URL = (
+    "https://cloud.infini-ai.com/maas/router/bytedance/api/v3"
+)
+
 
 @dataclass(frozen=True)
 class AgentConfig:
@@ -266,7 +270,11 @@ class AgentConfig:
             image_generation_enabled=os.getenv("IMAGE_GENERATION_ENABLED", "true").strip().lower()
             in {"1", "true", "yes", "on"},
             image_generation_base_url=(
-                os.getenv("IMAGE_GENERATION_BASE_URL") or ""
+                os.getenv(
+                    "IMAGE_GENERATION_BASE_URL",
+                    DEFAULT_IMAGE_GENERATION_BASE_URL,
+                )
+                or ""
             ).strip()
             or None,
             image_generation_model=(os.getenv("IMAGE_GENERATION_MODEL") or "").strip() or None,

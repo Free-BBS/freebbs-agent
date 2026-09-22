@@ -1,6 +1,8 @@
 import base64
+import os
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from freebbs_agent.agent_utils import AgentInvocation, ChatOptions
 from freebbs_agent.ai_client import AIClientError, ChatClient
@@ -157,6 +159,18 @@ class FakeOpenAIClient:
 
 
 class ChatClientImageTest(unittest.TestCase):
+    def test_environment_defaults_to_infini_seedream_gateway(self):
+        with patch.dict(os.environ, {}, clear=True):
+            config = AgentConfig.from_env()
+        self.assertEqual(
+            config.image_generation_base_url,
+            "https://cloud.infini-ai.com/maas/router/bytedance/api/v3",
+        )
+
+        with patch.dict(os.environ, {"IMAGE_GENERATION_BASE_URL": ""}, clear=True):
+            config = AgentConfig.from_env()
+        self.assertIsNone(config.image_generation_base_url)
+
     def test_discovers_seedream_and_requests_base64(self):
         fake = FakeOpenAIClient()
         client = ChatClient(make_config(), client_factory=lambda **_kwargs: fake)
