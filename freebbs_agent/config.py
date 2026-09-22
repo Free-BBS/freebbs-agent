@@ -173,6 +173,9 @@ class AgentConfig:
     online_router_confidence_threshold: float = 0.7
     rag_query_augmentation_enabled: bool = True
     rag_max_subqueries: int = 3
+    image_generation_enabled: bool = True
+    image_generation_model: str | None = None
+    image_generation_timeout_seconds: float = 180.0
 
     @property
     def server_settings_enabled(self) -> bool:
@@ -259,4 +262,10 @@ class AgentConfig:
             rag_query_augmentation_enabled=os.getenv("RAG_QUERY_AUGMENTATION_ENABLED", "true").lower()
             in {"1", "true", "yes", "on"},
             rag_max_subqueries=int(os.getenv("RAG_MAX_SUBQUERIES", "3")),
+            image_generation_enabled=os.getenv("IMAGE_GENERATION_ENABLED", "true").strip().lower()
+            in {"1", "true", "yes", "on"},
+            image_generation_model=(os.getenv("IMAGE_GENERATION_MODEL") or "").strip() or None,
+            image_generation_timeout_seconds=max(
+                30.0, float(os.getenv("IMAGE_GENERATION_TIMEOUT_SECONDS", "180"))
+            ),
         )

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import hashlib
+import re
 import threading
 from collections.abc import Iterator
 from typing import Any
@@ -44,6 +46,7 @@ class ChatClient:
         self._client = None
         self._client_fingerprint: str | None = None
         self._client_lock = threading.Lock()
+        self._image_model_by_fingerprint: dict[str, str] = {}
 
     def chat(
         self,
@@ -146,6 +149,58 @@ class ChatClient:
                     yield content
         except Exception:  # pragma: no cover - SDK/provider specific
             raise AIClientError("AI provider request failed") from None
+
+    def generate_image(self, prompt: str, *, size: str = "2048x2048") -> dict[str, str]:
+        snapshot = self._get_settings_snapshot()
+        client = self._get_client(snapshot)
+        fingerprint = self._settings_fingerprint(snapshot)
+        model = self._config.image_generation_model or self._image_model_by_fingerprint.get(
+            fingerprint
+        )
+        try:
+            if not model:
+                candidates = [
+                    str(item.id)
+                    for item in client.models.list().data
+                    if "seedream" in str(getattr(item, "id", "")).casefold()
+                ]
+                if not candidates:
+                    raise AIClientError("No image generation model is available")
+
+                def version_key(value: str):
+                    return tuple(int(part) for part in re.findall(r"\d+", value))
+
+                model = max(candidates, key=version_key)
+                self._image_model_by_fingerprint[fingerprint] = model
+
+            response = client.images.generate(
+                model=model,
+                prompt=prompt,
+                size=size,
+                response_format="b64_json",
+                extra_body={"watermark": True},
+                timeout=self._config.image_generation_timeout_seconds,
+            )
+            item = response.data[0]
+            encoded = getattr(item, "b64_json", None)
+            if not isinstance(encoded, str) or not encoded:
+                raise AIClientError("Image provider returned no image data")
+            raw = base64.b64decode(encoded, validate=True)
+            if not raw or len(raw) > 20 * 1024 * 1024:
+                raise AIClientError("Image provider returned invalid image data")
+            mime = "image/png"
+            if raw.startswith(b"\xff\xd8\xff"):
+                mime = "image/jpeg"
+            elif raw.startswith(b"RIFF") and raw[8:12] == b"WEBP":
+                mime = "image/webp"
+            return {
+                "data_url": f"data:{mime};base64,{encoded}",
+                "model": model,
+            }
+        except AIClientError:
+            raise
+        except Exception:  # pragma: no cover - SDK/provider specific
+            raise AIClientError("Image generation provider request failed") from None
 
     def _build_payload(
         self,

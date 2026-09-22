@@ -454,6 +454,9 @@ X-FreeBBS-Permissions: web_learning:read,thu_info:read
 | `AGENT_HOST` | `127.0.0.1` | 监听地址 |
 | `AGENT_PORT` | `5001` | 监听端口 |
 | `AGENT_TIMEOUT_SECONDS` | `60` | 模型请求超时 |
+| `IMAGE_GENERATION_ENABLED` | `true` | 是否允许问问 Max 和讨论区 Max 按需生成图片 |
+| `IMAGE_GENERATION_MODEL` | 空 | 指定 Seedream 模型；空时从 `/models` 自动选择最新可用型号 |
+| `IMAGE_GENERATION_TIMEOUT_SECONDS` | `180` | 单次图片生成超时秒数 |
 | `AGENT_SYSTEM_PROMPT` | 内置提示词 | 默认系统提示词 |
 | `AGENT_API_KEY` | 空 | 本地模型密钥，也兼容 `OPENAI_API_KEY` |
 | `AGENT_BASE_URL` | Infini-AI MaaS | OpenAI-compatible 地址 |
@@ -475,6 +478,11 @@ X-FreeBBS-Permissions: web_learning:read,thu_info:read
 Agent 仅在已验证支持视觉的模型上，将图像附加到最后一条 user 消息。
 路由、检索和历史中的文本保持原状，不把 Base64 存进会话历史。
 模型选择、强度和图像均为请求级配置，不改变其他用户或服务默认值。
+
+问问 Max 与讨论区 `@Max` 的请求可由 Web 后端授予一次性生图权限。问问 Max 的推理流会在最终事件中携带生成结果，模型仅在用户明确要求，
+或图片能显著改善概念解释时输出严格的 `max-image` 工具块；Agent 每次最多调用一次 Seedream，
+请求 `b64_json` 后交给 Web 后端校验、压缩并写入站内 `/uploads`。Base64、临时供应商地址和
+API 密钥均不会写入聊天记录或讨论数据库。Web 后端按用户限制并发和一分钟冷却。
 
 模型控制依据：[Infini-AI 推理参数](https://docs.infini-ai.com/gen-studio/api/text-generation/tutorial-reasoning/)。
 
