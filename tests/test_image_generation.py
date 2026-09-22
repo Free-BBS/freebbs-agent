@@ -9,6 +9,7 @@ from freebbs_agent.ai_client import AIClientError, ChatClient
 from freebbs_agent.config import AgentConfig
 from freebbs_agent.image_generation import (
     IMAGE_PLACEHOLDER,
+    explicit_image_request,
     parse_image_request,
     run_with_optional_image,
 )
@@ -73,6 +74,41 @@ def invocation(*, allowed=True, stream=False, reasoning_stream=False):
 
 
 class ImageGenerationTest(unittest.TestCase):
+    def test_recovers_an_explicit_image_request_when_model_omits_tool_block(self):
+        messages = [{"role": "user", "content": "生成一张羊吃草的卡通图片"}]
+        request = explicit_image_request(messages)
+        self.assertIsNotNone(request)
+        self.assertEqual(request.size, "2048x2048")
+
+        result = run_with_optional_image(
+            FakeAgent("我来为你生成，请稍等。"),
+            invocation(),
+            messages,
+        )
+        self.assertEqual(result["image_generation"]["status"], "completed")
+        self.assertIn(IMAGE_PLACEHOLDER, result["answer"])
+        self.assertEqual(len(result["generated_images"]), 1)
+
+    def test_does_not_recover_negated_or_explanatory_image_requests(self):
+        self.assertIsNone(
+            explicit_image_request([{"role": "user", "content": "不要生成图片，只解释原理"}])
+        )
+        self.assertIsNone(
+            explicit_image_request([{"role": "user", "content": "图片生成模型是什么？"}])
+        )
+
+    def test_discussion_fallback_only_uses_triggering_comment(self):
+        history = [{"role": "user", "content": "旧评论：帮我画一张海报"}]
+        payload = {
+            "source": "comment",
+            "context": {"triggerComment": {"contentMarkdown": "@Max 解释一下这篇帖子"}},
+        }
+        self.assertIsNone(explicit_image_request(history, payload))
+        payload["context"]["triggerComment"]["contentMarkdown"] = (
+            "@Max 生成一张羊吃草的卡通图片"
+        )
+        self.assertIsNotNone(explicit_image_request(history, payload))
+
     def test_parses_one_strict_image_block(self):
         answer = (
             "说明。\n```max-image\n"
