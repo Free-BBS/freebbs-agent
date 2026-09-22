@@ -130,6 +130,7 @@ class ImageGenerationTest(unittest.TestCase):
             FakeAgent(answer, fail=True), invocation(), invocation().messages
         )
         self.assertEqual(result["image_generation"]["status"], "failed")
+        self.assertEqual(result["image_generation"]["reason"], "ai_provider_error")
         self.assertIn("暂时不可用", result["answer"])
         self.assertNotIn("provider detail", result["answer"])
 
