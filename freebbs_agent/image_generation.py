@@ -100,11 +100,14 @@ def run_with_optional_image(agent, invocation: AgentInvocation, messages) -> dic
 
     try:
         image = agent.chat_client.generate_image(request.prompt, size=request.size)
-    except AIClientError:
+    except AIClientError as exc:
         result["answer"] = IMAGE_BLOCK.sub(
             "\n\n> 图片生成暂时不可用，请稍后再试。\n\n", answer, count=1
         ).strip()
-        result["image_generation"] = {"status": "failed"}
+        reason = getattr(exc, "code", "image_generation_failed")
+        if not re.fullmatch(r"[a-z0-9_]{1,64}", reason):
+            reason = "image_generation_failed"
+        result["image_generation"] = {"status": "failed", "reason": reason}
         return result
 
     result["answer"] = replaced.strip()

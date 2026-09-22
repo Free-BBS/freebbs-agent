@@ -19,7 +19,9 @@ from .server_settings import (
 
 
 class AIClientError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, code: str = "ai_provider_error"):
+        super().__init__(message)
+        self.code = code
 
 
 class ChatClient:
@@ -165,7 +167,10 @@ class ChatClient:
                     if "seedream" in str(getattr(item, "id", "")).casefold()
                 ]
                 if not candidates:
-                    raise AIClientError("No image generation model is available")
+                    raise AIClientError(
+                        "No image generation model is available",
+                        code="image_model_unavailable",
+                    )
 
                 def version_key(value: str):
                     return tuple(int(part) for part in re.findall(r"\d+", value))
@@ -184,10 +189,16 @@ class ChatClient:
             item = response.data[0]
             encoded = getattr(item, "b64_json", None)
             if not isinstance(encoded, str) or not encoded:
-                raise AIClientError("Image provider returned no image data")
+                raise AIClientError(
+                    "Image provider returned no image data",
+                    code="image_data_missing",
+                )
             raw = base64.b64decode(encoded, validate=True)
             if not raw or len(raw) > 20 * 1024 * 1024:
-                raise AIClientError("Image provider returned invalid image data")
+                raise AIClientError(
+                    "Image provider returned invalid image data",
+                    code="image_data_invalid",
+                )
             mime = "image/png"
             if raw.startswith(b"\xff\xd8\xff"):
                 mime = "image/jpeg"
@@ -199,8 +210,14 @@ class ChatClient:
             }
         except AIClientError:
             raise
-        except Exception:  # pragma: no cover - SDK/provider specific
-            raise AIClientError("Image generation provider request failed") from None
+        except Exception as exc:  # pragma: no cover - SDK/provider specific
+            status = getattr(exc, "status_code", None)
+            code = (
+                f"image_provider_http_{status}"
+                if isinstance(status, int)
+                else "image_provider_error"
+            )
+            raise AIClientError("Image generation provider request failed", code=code) from None
 
     def _build_payload(
         self,
