@@ -170,7 +170,8 @@ def create_app(
     @app.get("/dev/image-provider-diagnostics")
     def image_provider_diagnostics():
         try:
-            return jsonify(app.chat_client.image_model_diagnostics())  # type: ignore[attr-defined]
+            gateway_label = request.args.get("gateway_label")
+            return jsonify(app.chat_client.image_model_diagnostics(gateway_label))  # type: ignore[attr-defined]
         except AIClientError as exc:
             return jsonify({"error": {"code": exc.code, "message": str(exc)}}), 502
 

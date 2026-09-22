@@ -222,7 +222,7 @@ class ChatClient:
             )
             raise AIClientError("Image generation provider request failed", code=code) from None
 
-    def image_model_diagnostics(self) -> dict[str, Any]:
+    def image_model_diagnostics(self, gateway_label: str | None = None) -> dict[str, Any]:
         """Return non-secret Seedream model metadata for loopback-only diagnostics."""
         snapshot = self._get_settings_snapshot()
         client = self._get_client(snapshot)
@@ -296,6 +296,29 @@ class ChatClient:
                 "https://image.gateway.cloud.infini-ai.com/api/v3/images/generations",
                 "https://seedream.gateway.cloud.infini-ai.com/api/v3/images/generations",
             ):
+                try:
+                    response = probe_client.post(
+                        url,
+                        headers={"Authorization": f"Bearer {snapshot.api_key}"},
+                        json={},
+                    )
+                    probes.append(
+                        {
+                            "path": url,
+                            "body_keys": [],
+                            "status": response.status_code,
+                            "response": response.text[:4000],
+                        }
+                    )
+                except httpx.HTTPError as exc:
+                    probes.append(
+                        {"path": url, "body_keys": [], "error": type(exc).__name__}
+                    )
+            if gateway_label and re.fullmatch(r"[a-z0-9-]{1,63}", gateway_label):
+                url = (
+                    f"https://{gateway_label}.gateway.cloud.infini-ai.com"
+                    "/api/v3/images/generations"
+                )
                 try:
                     response = probe_client.post(
                         url,
