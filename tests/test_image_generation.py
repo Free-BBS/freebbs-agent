@@ -10,6 +10,7 @@ from freebbs_agent.ai_client import AIClientError, ChatClient
 from freebbs_agent.config import AgentConfig
 from freebbs_agent.image_generation import (
     IMAGE_PLACEHOLDER,
+    _with_tool_prompt,
     explicit_image_request,
     parse_image_request,
     run_with_optional_image,
@@ -78,6 +79,11 @@ def invocation(*, allowed=True, stream=False, reasoning_stream=False):
 
 
 class ImageGenerationTest(unittest.TestCase):
+    def test_image_tool_prompt_prefers_real_images_over_character_art(self):
+        messages = _with_tool_prompt([{"role": "system", "content": "基础规则"}])
+        self.assertIn("优先使用图片生成工具", messages[0]["content"])
+        self.assertIn("不要用字符、ASCII art", messages[0]["content"])
+
     def test_reasoning_stream_announces_image_phase_before_final_result(self):
         agent = FakeAgent("```max-image\n"
                           '{"prompt":"羊吃草","alt":"草地上的羊","aspect_ratio":"square"}'
