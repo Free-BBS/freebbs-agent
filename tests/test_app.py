@@ -7,6 +7,8 @@ from freebbs_agent.config import AgentConfig
 class FakeChatClient:
     def __init__(self):
         self.calls = []
+        self.answer = "pong"
+        self.image_calls = []
 
     def chat(self, messages, *, model=None, temperature=None, max_tokens=None):
         self.calls.append(
@@ -17,7 +19,14 @@ class FakeChatClient:
                 "max_tokens": max_tokens,
             }
         )
-        return {"answer": "pong", "model": model or "test-model", "finish_reason": "stop"}
+        return {"answer": self.answer, "model": model or "test-model", "finish_reason": "stop"}
+
+    def generate_image(self, prompt, *, size):
+        self.image_calls.append({"prompt": prompt, "size": size})
+        return {
+            "data_url": "data:image/png;base64,aW1hZ2U=",
+            "model": "doubao-seedream-test",
+        }
 
     def stream_chat(self, messages, *, model=None, temperature=None, max_tokens=None):
         self.calls.append(
@@ -176,6 +185,30 @@ class AppTest(unittest.TestCase):
         self.assertIn('data: {"delta": "你"}', body)
         self.assertIn('data: {"delta": "好"}', body)
         self.assertIn('data: {"done": true}', body)
+
+    def test_reasoning_stream_returns_generated_image_in_final_result(self):
+        self.chat_client.answer = (
+            "已为你生成：\n```max-image\n"
+            '{"prompt":"教学插画","alt":"教学图","aspect_ratio":"square"}'
+            "\n```"
+        )
+        response = self.client.post(
+            "/api/v1/chat",
+            json={
+                "agent": "general_chat",
+                "message": "请生成一张教学图",
+                "stream": True,
+                "reasoning_stream": True,
+                "allow_image_generation": True,
+            },
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        )
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('"done": true', body)
+        self.assertIn('"generated_images"', body)
+        self.assertIn('"dataUrl": "data:image/png;base64,aW1hZ2U="', body)
+        self.assertEqual(self.chat_client.image_calls[0]["size"], "2048x2048")
 
     def test_chat_routes_comment_mentions_to_comment_agent(self):
         response = self.client.post(

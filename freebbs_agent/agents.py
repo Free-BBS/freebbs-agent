@@ -5,6 +5,7 @@ from .rag_agent import RagAgent
 from .navigation_agent import NavigationAgent
 from .info_agent import InfoAgentBridge, InfoAgentClient
 from .online_router import OnlineAgentRouter
+from .image_generation import run_with_optional_image
 
 
 class GeneralChatAgent(FreeBBSAgent):
@@ -19,6 +20,9 @@ class GeneralChatAgent(FreeBBSAgent):
         if requested_agent is None:
             return True
         return requested_agent in {self.name, "general", "chat"}
+
+    def run(self, invocation: AgentInvocation) -> dict[str, Any]:
+        return run_with_optional_image(self, invocation, invocation.messages)
     
     
 #################################################
@@ -53,7 +57,11 @@ class CommentMentionAgent(FreeBBSAgent):# EXAMPLE
     def run(self, invocation: AgentInvocation) -> dict[str, Any]:
         """Answer a comment mention with an extra comment-scoped system instruction."""
         #非流式调用，直接返回整个结果
-        return self.call_llm(self._with_comment_prompt(invocation.messages), invocation.options)
+        return run_with_optional_image(
+            self,
+            invocation,
+            self._with_comment_prompt(invocation.messages),
+        )
 
     def stream(self, invocation: AgentInvocation) -> Iterator[str]:
         """Stream a comment mention response with the comment-scoped instruction."""

@@ -222,6 +222,7 @@ class NavigationAgent(FreeBBSAgent):
                 result["chat_answer"] = general_result["answer"]
                 result["answer"] = general_result["answer"]
                 result["model"] = general_result.get("model")
+                self._copy_generated_images(result, general_result)
             return result
 
         if general_result and general_result.get("answer"):
@@ -248,7 +249,15 @@ class NavigationAgent(FreeBBSAgent):
                     "navigation": navigation_snapshot,
                 }
             )
+            self._copy_generated_images(result, general_result)
         return result
+
+    @staticmethod
+    def _copy_generated_images(result: dict[str, Any], general_result: dict[str, Any]) -> None:
+        images = general_result.get("generated_images")
+        if isinstance(images, list) and images:
+            result["generated_images"] = images
+            result["image_generation"] = general_result.get("image_generation", {})
 
     @staticmethod
     def _general_invocation(invocation: AgentInvocation) -> AgentInvocation:
