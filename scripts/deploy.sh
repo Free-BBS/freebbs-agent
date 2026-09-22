@@ -13,12 +13,17 @@ SYSTEMCTL_BIN="${SYSTEMCTL_BIN:-$(command -v systemctl)}"
 mkdir -p "$DEPLOY_DIR"
 
 echo "[deploy] syncing project to $DEPLOY_DIR"
-rsync -a --delete \
-  --exclude ".git" \
-  --exclude ".venv" \
-  --exclude "__pycache__" \
-  --exclude "wheelhouse" \
-  "$ROOT_DIR"/ "$DEPLOY_DIR"/
+rsync_excludes=(
+  --exclude ".git"
+  --exclude ".venv"
+  --exclude "__pycache__"
+  --exclude "wheelhouse"
+)
+if [[ "${PRESERVE_DATA:-0}" == "1" ]]; then
+  rsync_excludes+=(--exclude "data")
+  echo "[deploy] preserving production data directory"
+fi
+rsync -a --delete "${rsync_excludes[@]}" "$ROOT_DIR"/ "$DEPLOY_DIR"/
 
 cd "$DEPLOY_DIR"
 

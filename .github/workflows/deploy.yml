@@ -72,6 +72,7 @@ jobs:
       ENV_FILE: ${{ vars.FREEBBS_AGENT_ENV_FILE || '/etc/free-bbs/freebbs-agent.env' }}
       SERVICE_NAME: ${{ vars.AGENT_SERVICE_NAME || 'free-bbs-agent' }}
       HEALTHCHECK_URL: ${{ vars.AGENT_HEALTHCHECK_URL || 'http://127.0.0.1:5001/health' }}
+      PRESERVE_DATA: ${{ github.event_name == 'workflow_dispatch' && inputs.lightweight && '1' || '0' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -93,8 +94,8 @@ jobs:
             --exclude='*.pyc'
           )
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.lightweight }}" == "true" ]]; then
-            excludes+=(--exclude='wheelhouse')
-            echo "[deploy] lightweight manual release: reusing production dependencies"
+            excludes+=(--exclude='wheelhouse' --exclude='data')
+            echo "[deploy] lightweight manual release: reusing production dependencies and data"
           fi
           tar "${excludes[@]}" -czf "$ARCHIVE_PATH" .
 
@@ -162,6 +163,7 @@ jobs:
                FREEBBS_AGENT_ENV_FILE='$ENV_FILE' \
                AGENT_SERVICE_NAME='$SERVICE_NAME' \
                HEALTHCHECK_URL='$HEALTHCHECK_URL' \
+               PRESERVE_DATA='$PRESERVE_DATA' \
                bash -c 'release_dir=\"\$1\"; status_dir=\"\$2\"; if cd \"\$release_dir\" && flock -w 300 /tmp/freebbs-agent-deploy.lock timeout --signal=TERM --kill-after=30s 40m bash scripts/deploy.sh; then touch \"\$status_dir/success\"; rm -rf \"\$release_dir\" /tmp/freebbs-agent-${GITHUB_SHA}.tar.gz; else exit_code=\$?; printf \"%s\\n\" \"\$exit_code\" > \"\$status_dir/failed\"; fi' \
                bash \"\$RELEASE_DIR\" \"\$STATUS_DIR\" \
                > \"\$STATUS_DIR/deploy.log\" 2>&1 < /dev/null & \
