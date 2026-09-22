@@ -291,6 +291,29 @@ class ChatClient:
                             "error": type(exc).__name__,
                         }
                     )
+            for url in (
+                "https://image.gateway.cloud.infini-ai.com/v1/images/generations",
+                "https://image.gateway.cloud.infini-ai.com/api/v3/images/generations",
+                "https://seedream.gateway.cloud.infini-ai.com/api/v3/images/generations",
+            ):
+                try:
+                    response = probe_client.post(
+                        url,
+                        headers={"Authorization": f"Bearer {snapshot.api_key}"},
+                        json={},
+                    )
+                    probes.append(
+                        {
+                            "path": url,
+                            "body_keys": [],
+                            "status": response.status_code,
+                            "response": response.text[:4000],
+                        }
+                    )
+                except httpx.HTTPError as exc:
+                    probes.append(
+                        {"path": url, "body_keys": [], "error": type(exc).__name__}
+                    )
         return {"models": diagnostics, "probes": probes}
 
     def _build_payload(
