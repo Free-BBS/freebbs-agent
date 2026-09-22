@@ -6,9 +6,6 @@ import re
 import threading
 from collections.abc import Iterator
 from typing import Any
-from urllib.parse import urlsplit
-
-import httpx
 
 from .config import AgentConfig
 from .model_options import reasoning_options, with_images
@@ -50,6 +47,8 @@ class ChatClient:
         self._client_factory = client_factory or self._create_openai_client
         self._client = None
         self._client_fingerprint: str | None = None
+        self._image_client = None
+        self._image_client_fingerprint: str | None = None
         self._client_lock = threading.Lock()
         self._image_model_by_fingerprint: dict[str, str] = {}
 
@@ -158,6 +157,7 @@ class ChatClient:
     def generate_image(self, prompt: str, *, size: str = "2048x2048") -> dict[str, str]:
         snapshot = self._get_settings_snapshot()
         client = self._get_client(snapshot)
+        image_client = self._get_image_client(snapshot, client)
         fingerprint = self._settings_fingerprint(snapshot)
         model = self._config.image_generation_model or self._image_model_by_fingerprint.get(
             fingerprint
@@ -181,7 +181,7 @@ class ChatClient:
                 model = max(candidates, key=version_key)
                 self._image_model_by_fingerprint[fingerprint] = model
 
-            response = client.images.generate(
+            response = image_client.images.generate(
                 model=model,
                 prompt=prompt,
                 size=size,
@@ -221,203 +221,6 @@ class ChatClient:
                 else "image_provider_error"
             )
             raise AIClientError("Image generation provider request failed", code=code) from None
-
-    def image_model_diagnostics(
-        self,
-        gateway_label: str | None = None,
-        *,
-        probe_responses: bool = False,
-    ) -> dict[str, Any]:
-        """Return non-secret Seedream model metadata for loopback-only diagnostics."""
-        snapshot = self._get_settings_snapshot()
-        client = self._get_client(snapshot)
-        diagnostics = []
-        for item in client.models.list().data:
-            model_id = str(getattr(item, "id", ""))
-            if "seedream" not in model_id.casefold():
-                continue
-            dumped = item.model_dump() if hasattr(item, "model_dump") else {}
-            diagnostics.append(
-                {
-                    "id": model_id,
-                    "object": dumped.get("object"),
-                    "created": dumped.get("created"),
-                    "owned_by": dumped.get("owned_by"),
-                    "extra": {
-                        key: value
-                        for key, value in dumped.items()
-                        if key not in {"id", "object", "created", "owned_by"}
-                        and not any(
-                            marker in key.casefold()
-                            for marker in ("key", "token", "secret", "authorization")
-                        )
-                    },
-                }
-            )
-        parsed = urlsplit(snapshot.base_url)
-        origin = f"{parsed.scheme}://{parsed.netloc}"
-        probes = []
-        probe_requests = [
-            (
-                "/api/maas/user/v2/model/list",
-                {"offset": 0, "limit": 200, "scope": "public", "is_brief": False},
-            ),
-            (
-                "/api/maas/user/v2/model/detail",
-                {"model_name": "doubao-seedream-5-0-260128"},
-            ),
-            (
-                "/api/maas/user/v2/model/detail",
-                {"model_id": "doubao-seedream-5-0-260128"},
-            ),
-        ]
-        with httpx.Client(timeout=10, trust_env=False) as probe_client:
-            try:
-                response = probe_client.get(
-                    f"{snapshot.base_url.rstrip('/')}/models/doubao-seedream-5-0-260128",
-                    headers={"Authorization": f"Bearer {snapshot.api_key}"},
-                )
-                probes.append(
-                    {
-                        "path": "/maas/v1/models/doubao-seedream-5-0-260128",
-                        "body_keys": [],
-                        "status": response.status_code,
-                        "response": response.text[:4000],
-                        "headers": {
-                            key: value
-                            for key, value in response.headers.items()
-                            if key.casefold()
-                            in {"content-type", "traceresponse", "x-infini-gateway"}
-                        },
-                    }
-                )
-            except httpx.HTTPError as exc:
-                probes.append(
-                    {
-                        "path": "/maas/v1/models/doubao-seedream-5-0-260128",
-                        "body_keys": [],
-                        "error": type(exc).__name__,
-                    }
-                )
-            for path, body in probe_requests:
-                try:
-                    response = probe_client.post(
-                        f"{origin}{path}",
-                        headers={"Authorization": f"Bearer {snapshot.api_key}"},
-                        json=body,
-                    )
-                    text = response.text
-                    probes.append(
-                        {
-                            "path": path,
-                            "body_keys": sorted(body),
-                            "status": response.status_code,
-                            "response": text[:4000],
-                        }
-                    )
-                except httpx.HTTPError as exc:
-                    probes.append(
-                        {
-                            "path": path,
-                            "body_keys": sorted(body),
-                            "error": type(exc).__name__,
-                        }
-                    )
-            for url in (
-                "https://image.gateway.cloud.infini-ai.com/v1/images/generations",
-                "https://image.gateway.cloud.infini-ai.com/api/v3/images/generations",
-                "https://seedream.gateway.cloud.infini-ai.com/api/v3/images/generations",
-            ):
-                try:
-                    response = probe_client.post(
-                        url,
-                        headers={"Authorization": f"Bearer {snapshot.api_key}"},
-                        json={},
-                    )
-                    probes.append(
-                        {
-                            "path": url,
-                            "body_keys": [],
-                            "status": response.status_code,
-                            "response": response.text[:4000],
-                        }
-                    )
-                except httpx.HTTPError as exc:
-                    probes.append(
-                        {"path": url, "body_keys": [], "error": type(exc).__name__}
-                    )
-            if gateway_label and re.fullmatch(r"[a-z0-9-]{1,63}", gateway_label):
-                url = (
-                    f"https://{gateway_label}.gateway.cloud.infini-ai.com"
-                    "/api/v3/images/generations"
-                )
-                try:
-                    response = probe_client.post(
-                        url,
-                        headers={"Authorization": f"Bearer {snapshot.api_key}"},
-                        json={},
-                    )
-                    probes.append(
-                        {
-                            "path": url,
-                            "body_keys": [],
-                            "status": response.status_code,
-                            "response": response.text[:4000],
-                        }
-                    )
-                except httpx.HTTPError as exc:
-                    probes.append(
-                        {"path": url, "body_keys": [], "error": type(exc).__name__}
-                    )
-            if probe_responses:
-                for body in (
-                    {
-                        "model": "doubao-seedream-5-0-260128",
-                        "input": "生成一张纯蓝色方形图片",
-                    },
-                    {
-                        "model": snapshot.model,
-                        "input": "生成一张纯蓝色方形图片",
-                        "tools": [{"type": "image_generation"}],
-                    },
-                ):
-                    url = f"{snapshot.base_url.rstrip('/')}/responses"
-                    try:
-                        response = probe_client.post(
-                            url,
-                            headers={"Authorization": f"Bearer {snapshot.api_key}"},
-                            json=body,
-                            timeout=self._config.image_generation_timeout_seconds,
-                        )
-                        probes.append(
-                            {
-                                "path": url,
-                                "body_keys": sorted(body),
-                                "model": body["model"],
-                                "status": response.status_code,
-                                "response": response.text[:4000],
-                            }
-                        )
-                    except httpx.HTTPError as exc:
-                        probes.append(
-                            {
-                                "path": url,
-                                "body_keys": sorted(body),
-                                "model": body["model"],
-                                "error": type(exc).__name__,
-                            }
-                        )
-        return {
-            "models": diagnostics,
-            "probes": probes,
-            "api_key_shape": {
-                "length": len(snapshot.api_key),
-                "hyphens": [
-                    index for index, character in enumerate(snapshot.api_key) if character == "-"
-                ],
-                "dots": snapshot.api_key.count("."),
-            },
-        }
 
     def _build_payload(
         self,
@@ -480,6 +283,35 @@ class ChatClient:
 
             self._client = client
             self._client_fingerprint = fingerprint
+            return client
+
+    def _get_image_client(self, snapshot: ServerSettingsSnapshot, default_client):
+        base_url = self._config.image_generation_base_url
+        if not base_url or base_url.rstrip("/") == snapshot.base_url.rstrip("/"):
+            return default_client
+
+        fingerprint = f"{self._settings_fingerprint(snapshot)}:{base_url.rstrip('/')}"
+        with self._client_lock:
+            if (
+                self._image_client is not None
+                and self._image_client_fingerprint == fingerprint
+            ):
+                return self._image_client
+            try:
+                client = self._client_factory(
+                    api_key=snapshot.api_key,
+                    base_url=base_url,
+                    timeout=self._config.image_generation_timeout_seconds,
+                )
+            except AIClientError:
+                raise
+            except Exception:
+                raise AIClientError(
+                    "failed to initialize image provider client",
+                    code="image_provider_initialization_failed",
+                ) from None
+            self._image_client = client
+            self._image_client_fingerprint = fingerprint
             return client
 
     def course_materials_root(self) -> str:
