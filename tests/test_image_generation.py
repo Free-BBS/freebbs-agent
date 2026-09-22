@@ -1,6 +1,7 @@
 import base64
 import os
 import unittest
+from threading import Event
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -13,6 +14,7 @@ from freebbs_agent.image_generation import (
     parse_image_request,
     run_with_optional_image,
 )
+from freebbs_agent.reasoning_stream import ModelProgress, current_progress, reasoning_events
 
 
 def make_config(**overrides):
@@ -51,6 +53,8 @@ class FakeImageChatClient:
 
 
 class FakeAgent:
+    name = "general_chat"
+
     def __init__(self, answer, *, fail=False):
         self.config = make_config()
         self.chat_client = FakeImageChatClient(answer, fail=fail)
@@ -74,6 +78,39 @@ def invocation(*, allowed=True, stream=False, reasoning_stream=False):
 
 
 class ImageGenerationTest(unittest.TestCase):
+    def test_reasoning_stream_announces_image_phase_before_final_result(self):
+        agent = FakeAgent("```max-image\n"
+                          '{"prompt":"羊吃草","alt":"草地上的羊","aspect_ratio":"square"}'
+                          "\n```")
+        agent.run = lambda request: run_with_optional_image(
+            agent, request, request.messages
+        )
+        events = [event for event in reasoning_events(
+            agent, invocation(stream=True, reasoning_stream=True)
+        ) if event is not None]
+        self.assertEqual([event.get("status") for event in events[:2]], [
+            "thinking", "image_generating"
+        ])
+        self.assertTrue(events[-1]["done"])
+        self.assertEqual(events[-1]["result"]["image_generation"]["status"], "completed")
+
+    def test_stream_reports_image_generation_after_model_decides(self):
+        events = []
+        progress = ModelProgress(events.append, Event())
+        token = current_progress.set(progress)
+        try:
+            result = run_with_optional_image(
+                FakeAgent("```max-image\n"
+                          '{"prompt":"羊吃草","alt":"草地上的羊","aspect_ratio":"square"}'
+                          "\n```"),
+                invocation(reasoning_stream=True),
+                invocation().messages,
+            )
+        finally:
+            current_progress.reset(token)
+        self.assertEqual(events, [{"status": "image_generating"}])
+        self.assertEqual(result["image_generation"]["status"], "completed")
+
     def test_recovers_an_explicit_image_request_when_model_omits_tool_block(self):
         messages = [{"role": "user", "content": "生成一张羊吃草的卡通图片"}]
         request = explicit_image_request(messages)

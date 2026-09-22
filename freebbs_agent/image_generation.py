@@ -7,6 +7,7 @@ from typing import Any
 
 from .agent_utils import AgentInvocation
 from .ai_client import AIClientError
+from .reasoning_stream import current_progress
 
 
 IMAGE_BLOCK = re.compile(
@@ -148,6 +149,9 @@ def run_with_optional_image(agent, invocation: AgentInvocation, messages) -> dic
             return result
         recovered = True
 
+    progress = current_progress.get()
+    if progress is not None:
+        progress.status("image_generating")
     try:
         image = agent.chat_client.generate_image(request.prompt, size=request.size)
     except AIClientError as exc:
