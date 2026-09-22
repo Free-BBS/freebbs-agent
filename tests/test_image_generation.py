@@ -165,6 +165,30 @@ class ChatClientImageTest(unittest.TestCase):
         self.assertTrue(result["data_url"].startswith("data:image/png;base64,"))
         self.assertEqual(fake.images.calls[0]["response_format"], "b64_json")
 
+    def test_uses_dedicated_image_base_url_with_managed_key(self):
+        chat_client = FakeOpenAIClient()
+        image_client = FakeOpenAIClient()
+        calls = []
+
+        def factory(**kwargs):
+            calls.append(kwargs)
+            return image_client if "images.example.test" in kwargs["base_url"] else chat_client
+
+        client = ChatClient(
+            make_config(
+                image_generation_base_url="https://images.example.test/api/v3",
+                image_generation_model="doubao-seedream-5-0",
+            ),
+            client_factory=factory,
+        )
+        result = client.generate_image("test", size="2048x2048")
+
+        self.assertEqual(result["model"], "doubao-seedream-5-0")
+        self.assertEqual(calls[1]["api_key"], "test-key")
+        self.assertEqual(calls[1]["base_url"], "https://images.example.test/api/v3")
+        self.assertEqual(len(image_client.images.calls), 1)
+        self.assertEqual(len(chat_client.images.calls), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -47,6 +47,8 @@ class ChatClient:
         self._client_factory = client_factory or self._create_openai_client
         self._client = None
         self._client_fingerprint: str | None = None
+        self._image_client = None
+        self._image_client_fingerprint: str | None = None
         self._client_lock = threading.Lock()
         self._image_model_by_fingerprint: dict[str, str] = {}
 
@@ -155,6 +157,7 @@ class ChatClient:
     def generate_image(self, prompt: str, *, size: str = "2048x2048") -> dict[str, str]:
         snapshot = self._get_settings_snapshot()
         client = self._get_client(snapshot)
+        image_client = self._get_image_client(snapshot, client)
         fingerprint = self._settings_fingerprint(snapshot)
         model = self._config.image_generation_model or self._image_model_by_fingerprint.get(
             fingerprint
@@ -178,7 +181,7 @@ class ChatClient:
                 model = max(candidates, key=version_key)
                 self._image_model_by_fingerprint[fingerprint] = model
 
-            response = client.images.generate(
+            response = image_client.images.generate(
                 model=model,
                 prompt=prompt,
                 size=size,
@@ -280,6 +283,35 @@ class ChatClient:
 
             self._client = client
             self._client_fingerprint = fingerprint
+            return client
+
+    def _get_image_client(self, snapshot: ServerSettingsSnapshot, default_client):
+        base_url = self._config.image_generation_base_url
+        if not base_url or base_url.rstrip("/") == snapshot.base_url.rstrip("/"):
+            return default_client
+
+        fingerprint = f"{self._settings_fingerprint(snapshot)}:{base_url.rstrip('/')}"
+        with self._client_lock:
+            if (
+                self._image_client is not None
+                and self._image_client_fingerprint == fingerprint
+            ):
+                return self._image_client
+            try:
+                client = self._client_factory(
+                    api_key=snapshot.api_key,
+                    base_url=base_url,
+                    timeout=self._config.image_generation_timeout_seconds,
+                )
+            except AIClientError:
+                raise
+            except Exception:
+                raise AIClientError(
+                    "failed to initialize image provider client",
+                    code="image_provider_initialization_failed",
+                ) from None
+            self._image_client = client
+            self._image_client_fingerprint = fingerprint
             return client
 
     def course_materials_root(self) -> str:

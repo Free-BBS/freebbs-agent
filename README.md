@@ -455,6 +455,7 @@ X-FreeBBS-Permissions: web_learning:read,thu_info:read
 | `AGENT_PORT` | `5001` | 监听端口 |
 | `AGENT_TIMEOUT_SECONDS` | `60` | 模型请求超时 |
 | `IMAGE_GENERATION_ENABLED` | `true` | 是否允许问问 Max 和讨论区 Max 按需生成图片 |
+| `IMAGE_GENERATION_BASE_URL` | 空 | 图片供应商的专用 OpenAI-compatible Base URL；空时复用模型地址 |
 | `IMAGE_GENERATION_MODEL` | 空 | 指定 Seedream 模型；空时从 `/models` 自动选择最新可用型号 |
 | `IMAGE_GENERATION_TIMEOUT_SECONDS` | `180` | 单次图片生成超时秒数 |
 | `AGENT_SYSTEM_PROMPT` | 内置提示词 | 默认系统提示词 |
