@@ -6,6 +6,9 @@ import re
 import threading
 from collections.abc import Iterator
 from typing import Any
+from urllib.parse import urlsplit
+
+import httpx
 
 from .config import AgentConfig
 from .model_options import reasoning_options, with_images
@@ -219,7 +222,7 @@ class ChatClient:
             )
             raise AIClientError("Image generation provider request failed", code=code) from None
 
-    def image_model_diagnostics(self) -> list[dict[str, Any]]:
+    def image_model_diagnostics(self) -> dict[str, Any]:
         """Return non-secret Seedream model metadata for loopback-only diagnostics."""
         snapshot = self._get_settings_snapshot()
         client = self._get_client(snapshot)
@@ -246,7 +249,49 @@ class ChatClient:
                     },
                 }
             )
-        return diagnostics
+        parsed = urlsplit(snapshot.base_url)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        probes = []
+        probe_requests = [
+            (
+                "/api/maas/user/v2/model/list",
+                {"offset": 0, "limit": 200, "scope": "public", "is_brief": False},
+            ),
+            (
+                "/api/maas/user/v2/model/detail",
+                {"model_name": "doubao-seedream-5-0-260128"},
+            ),
+            (
+                "/api/maas/user/v2/model/detail",
+                {"model_id": "doubao-seedream-5-0-260128"},
+            ),
+        ]
+        with httpx.Client(timeout=10, trust_env=False) as probe_client:
+            for path, body in probe_requests:
+                try:
+                    response = probe_client.post(
+                        f"{origin}{path}",
+                        headers={"Authorization": f"Bearer {snapshot.api_key}"},
+                        json=body,
+                    )
+                    text = response.text
+                    probes.append(
+                        {
+                            "path": path,
+                            "body_keys": sorted(body),
+                            "status": response.status_code,
+                            "response": text[:4000],
+                        }
+                    )
+                except httpx.HTTPError as exc:
+                    probes.append(
+                        {
+                            "path": path,
+                            "body_keys": sorted(body),
+                            "error": type(exc).__name__,
+                        }
+                    )
+        return {"models": diagnostics, "probes": probes}
 
     def _build_payload(
         self,
